@@ -1,47 +1,35 @@
-## Wraith v0.2.0
+## Wraith v0.3.0
 
-A big feature/fix batch on top of the first build: a real bug in
-"Send to Repeater" is fixed, Intercept no longer loses a held request
-when you switch tabs, and there's a full new JWT attack tool.
-
-### New
-
-- **JWT tool** — decode, sign/reconstruct (independent of the header's
-  own `alg`, for alg-confusion testing), a one-click "strip signature
-  (alg:none attack)" shortcut, verify against a secret/public key, and
-  a wordlist-based HS256/384/512 secret cracker with live progress.
-- **Packet Capture**: a post-capture display filter (separate from the
-  BPF capture filter) with a built-in cheat sheet of common examples,
-  and export to `.pcap` / `.pcapng` / `.json` / `.csv`.
-- **History**: export the current view to CSV or JSON.
-- **Cracker**: Kali's `rockyou.txt` is now auto-detected (and
-  auto-extracted if only the `.gz` is present) as the default wordlist.
-- **Settings**, significantly expanded: history limit, confirm-before-drop,
-  the Intercept alert toggle, a default capture interface, a default
-  wordlist override, live accent-color theming, devtools-on-launch, and
-  a Certificate Authority section (export, open folder, **regenerate**).
-- **Intercept**: a red flash on the sidebar and the held-item card when
-  something new is captured (toggleable in Settings), and a
-  "Send to Repeater" button right on a held item.
-- **Decoder**: redesigned around picking an operation, then hitting a
-  clear "Convert →" button, instead of every button firing immediately.
+Fixes a real Repeater bug the moment you'd actually hit it, adds tab
+groups/renaming, and makes the default cracking wordlist work on every
+OS — not just Kali.
 
 ### Fixed
 
-- **"Send to Repeater" did nothing** — a React state-update ordering bug
-  in the app's shared context meant the pending request was always
-  discarded before Repeater could read it.
-- **A request held in Intercept could vanish from the UI** if you
-  switched to another tab while the proxy still had it paused in the
-  background — the queue now lives in shared app state instead of the
-  Intercept page's own local state, so it survives navigation.
-- **hashcat's "enable rules" always failed** on a stock install — it
-  pointed at a rules file (`best64.rule`) that Kali's hashcat package
-  doesn't ship. It's now a real file picker instead of a hardcoded path.
-- Closed a class of race condition in the JWT cracker, Cracker, Packet
-  Capture and Crawler pages where a very fast job could have its first
-  result event silently dropped before the UI finished subscribing to
-  it.
+- **Sending two different requests to Repeater could overwrite/lose a
+  previous tab.** Repeater's tabs lived in the page's own component
+  state, which resets every time you navigate away and back (the same
+  class of bug already fixed for Intercept in v0.2.0). Tabs now live in
+  shared app state and survive navigation — verified by sending three
+  different same-domain requests with a full navigation between each;
+  all three keep their own tab and data.
+- **`window.prompt()` doesn't exist in Electron's renderer** (it throws
+  outright) — the first pass at "create a new group" used it and was
+  completely broken. Replaced with a real inline text field.
+
+### New
+
+- **Repeater tab groups**: assign tabs to a group, then send the whole
+  group's requests **in parallel** or **sequentially**, like Burp's
+  group-send. Rename any tab or group by double-clicking its label.
+  Deleting a group ungroups its tabs instead of closing them.
+- **rockyou.txt now works out of the box on Windows and macOS too** (and
+  any Linux that isn't Kali) — Wraith ships its own compressed copy and
+  falls back to it when the OS doesn't have one, extracted on first use
+  the same way as before. Verified with a real install: hid this
+  machine's system copy, installed the packaged app, confirmed it fell
+  back to and extracted the bundled copy with a byte-for-byte matching
+  checksum.
 
 ### Known limitations
 
@@ -55,8 +43,8 @@ when you switch tabs, and there's a full new JWT attack tool.
 
 ### Installing
 
-- **Windows**: download `Wraith-Setup-0.2.0.exe`, run it.
-- **Linux**: `sudo apt install ./Wraith-0.2.0-linux-amd64.deb` (or
+- **Windows**: download `Wraith-Setup-0.3.0.exe`, run it.
+- **Linux**: `sudo apt install ./Wraith-0.3.0-linux-amd64.deb` (or
   double-click it in a GUI package manager).
 - **macOS**: open the `.dmg`, drag Wraith to Applications. It's
   unsigned, so the first launch needs right-click → Open to get past

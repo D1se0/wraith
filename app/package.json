@@ -1,7 +1,7 @@
 {
   "name": "wraith",
   "productName": "Wraith",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Wraith — an intuitive, automatic, all-in-one offensive web toolkit (intercepting proxy, packet capture, hash cracking, cURL builder, crawler and more).",
   "author": "Wraith Project <noreply@wraith.local>",
   "homepage": "https://github.com/D1se0/wraith",
