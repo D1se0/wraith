@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CrackerJobRequest, CrackerTool } from "../../electron/types";
 import { IconKey, IconPlay, IconStop, IconExternal } from "../lib/icons";
 
@@ -18,6 +18,10 @@ export function Cracker() {
   const [attackMode, setAttackMode] = useState<"wordlist" | "mask" | "bruteforce">("wordlist");
   const [mask, setMask] = useState("?a?a?a?a?a?a");
   const [rulesEnabled, setRulesEnabled] = useState(false);
+  const [rulesFile, setRulesFile] = useState("");
+  const [wordlistSource, setWordlistSource] = useState<string | null>(null);
+  const [rockyouNeedsExtraction, setRockyouNeedsExtraction] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [johnFormat, setJohnFormat] = useState("");
   const [johnFormats, setJohnFormats] = useState<string[]>([]);
   const [hashcatMode, setHashcatMode] = useState("0");
@@ -27,25 +31,62 @@ export function Cracker() {
   const [console_, setConsole] = useState<{ line: string; kind: string }[]>([]);
   const [results, setResults] = useState<{ hash: string; plain: string }[]>([]);
   const [modeFilter, setModeFilter] = useState("");
+  // See JwtTool.tsx's crackJobIdRef for why this needs to be a ref, not
+  // just the `job` state read via a `[job]` effect dependency: a job that
+  // finishes within the same tick it starts (fast wordlist, tiny hash
+  // file) can have its first events arrive before React re-renders and
+  // re-subscribes the listener, silently dropping them.
+  const jobRef = useRef<JobHandle | null>(null);
 
   useEffect(() => {
     window.wraith.cracker.checkAvailable().then(setAvailability);
     window.wraith.cracker.listJohnFormats().then(setJohnFormats);
     window.wraith.cracker.listHashcatModes().then(setHashcatModes);
+
+    (async () => {
+      const settings = await window.wraith.settings.get();
+      if (settings.general.defaultWordlist) {
+        setWordlistFile(settings.general.defaultWordlist);
+        setWordlistSource("settings override");
+        return;
+      }
+      const info = await window.wraith.cracker.defaultWordlist();
+      if (info.path) {
+        setWordlistFile(info.path);
+        setWordlistSource(`Kali's rockyou.txt (${Math.round((info.sizeBytes || 0) / 1024 / 1024)} MB)`);
+      } else if (info.needsExtraction) {
+        setRockyouNeedsExtraction(true);
+      }
+    })();
   }, []);
+
+  const extractRockyou = async () => {
+    setExtracting(true);
+    try {
+      const info = await window.wraith.cracker.extractRockyou();
+      if (info.path) {
+        setWordlistFile(info.path);
+        setWordlistSource(`Kali's rockyou.txt (${Math.round((info.sizeBytes || 0) / 1024 / 1024)} MB)`);
+        setRockyouNeedsExtraction(false);
+      }
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   useEffect(() => {
     const off = window.wraith.cracker.onEvent((evt) => {
-      if (!job || evt.jobId !== job.jobId) return;
+      const currentJob = jobRef.current;
+      if (!currentJob || evt.jobId !== currentJob.jobId) return;
       if (evt.type === "stdout") setConsole((c) => [...c.slice(-500), { line: evt.data, kind: "out" }]);
       if (evt.type === "stderr") setConsole((c) => [...c.slice(-500), { line: evt.data, kind: "err" }]);
       if (evt.type === "cracked") setConsole((c) => [...c.slice(-500), { line: `✓ ${evt.data}`, kind: "cracked" }]);
       if (evt.type === "done") {
-        window.wraith.cracker.readResults(job).then(setResults);
+        window.wraith.cracker.readResults(currentJob).then(setResults);
       }
     });
     return off;
-  }, [job]);
+  }, []);
 
   const filteredHashcatModes = useMemo(() => {
     const q = modeFilter.trim().toLowerCase();
@@ -68,11 +109,13 @@ export function Cracker() {
       hashcatMode,
       johnFormat: johnFormat || undefined,
       rulesEnabled,
+      rulesFile: tool === "hashcat" && rulesEnabled ? rulesFile || undefined : undefined,
       attackMode,
       mask: attackMode === "mask" ? mask : undefined,
       extraArgs: extraArgs || undefined,
     };
     const handle = await window.wraith.cracker.start(req);
+    jobRef.current = handle;
     setJob(handle);
   };
 
@@ -176,18 +219,44 @@ export function Cracker() {
             <div className="field">
               <label>Wordlist</label>
               <div className="row">
-                <input type="text" readOnly value={wordlistFile} placeholder="Choose a file…" />
-                <button className="btn btn-sm" onClick={() => pick(setWordlistFile)}>
+                <input
+                  type="text"
+                  readOnly
+                  value={wordlistFile}
+                  placeholder="Choose a file…"
+                  onClick={() => pick((v) => { setWordlistFile(v); setWordlistSource(null); })}
+                />
+                <button
+                  className="btn btn-sm"
+                  onClick={() => pick((v) => { setWordlistFile(v); setWordlistSource(null); })}
+                >
                   Browse
                 </button>
               </div>
+              {wordlistSource && <span className="field-hint">Using {wordlistSource}.</span>}
+              {rockyouNeedsExtraction && !wordlistFile && (
+                <div className="row" style={{ gap: 8, marginTop: 6 }}>
+                  <span className="field-hint">rockyou.txt.gz found but not extracted.</span>
+                  <button className="btn btn-sm" onClick={extractRockyou} disabled={extracting}>
+                    {extracting ? "Extracting…" : "Extract now"}
+                  </button>
+                </div>
+              )}
             </div>
             <div className="field">
               <label>&nbsp;</label>
               <label className="row" style={{ gap: 8 }}>
                 <input type="checkbox" checked={rulesEnabled} onChange={(e) => setRulesEnabled(e.target.checked)} />
-                Enable rules {tool === "john" ? "(--rules)" : "(best64.rule)"}
+                Enable rules
               </label>
+              {tool === "hashcat" && rulesEnabled && (
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input type="text" readOnly value={rulesFile} placeholder="Choose a .rule file…" />
+                  <button className="btn btn-sm" onClick={() => pick(setRulesFile)}>
+                    Browse
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { CapturedPacketSummary } from "../../electron/types";
-import { IconPlay, IconStop, IconWave, IconExternal } from "../lib/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CapturedPacketSummary, CaptureExportFormat } from "../../electron/types";
+import { IconPlay, IconStop, IconWave, IconExternal, IconDownload } from "../lib/icons";
 
 const PROTO_COLOR: Record<string, string> = {
   TCP: "var(--info)",
@@ -11,11 +11,30 @@ const PROTO_COLOR: Record<string, string> = {
   ICMP: "var(--danger)",
 };
 
+const FILTER_EXAMPLES: { filter: string; desc: string }[] = [
+  { filter: "http", desc: "only HTTP traffic" },
+  { filter: "http.request", desc: "only HTTP requests" },
+  { filter: "http.response.code == 200", desc: "HTTP 200 responses" },
+  { filter: "tcp.port == 443", desc: "traffic on port 443 (either direction)" },
+  { filter: "tcp.port == 80 || tcp.port == 443", desc: "HTTP or HTTPS" },
+  { filter: "ip.addr == 192.168.1.10", desc: "traffic to/from a specific host" },
+  { filter: "ip.src == 10.0.0.5", desc: "traffic FROM a host" },
+  { filter: "dns", desc: "DNS traffic" },
+  { filter: "tls.handshake.type == 1", desc: "TLS ClientHello" },
+  { filter: "tcp.flags.syn == 1 && tcp.flags.ack == 0", desc: "SYN packets (new connections)" },
+  { filter: "tcp.analysis.retransmission", desc: "retransmitted TCP segments" },
+  { filter: 'http.request.method == "POST"', desc: "POST requests only" },
+  { filter: 'frame contains "password"', desc: "raw bytes contain a string" },
+  { filter: "websocket", desc: "WebSocket traffic" },
+];
+
+const EXPORT_FORMATS: CaptureExportFormat[] = ["pcap", "pcapng", "json", "csv"];
+
 export function Capture() {
   const [available, setAvailable] = useState<{ available: boolean; installHint: string } | null>(null);
   const [interfaces, setInterfaces] = useState<{ id: string; description: string }[]>([]);
   const [iface, setIface] = useState("");
-  const [filter, setFilter] = useState("");
+  const [capFilter, setCapFilter] = useState("");
   const [jobId, setJobId] = useState<string | null>(null);
   const [pcapPath, setPcapPath] = useState<string | null>(null);
   const [packets, setPackets] = useState<CapturedPacketSummary[]>([]);
@@ -24,25 +43,40 @@ export function Capture() {
   const [search, setSearch] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
 
+  const [displayFilterText, setDisplayFilterText] = useState("");
+  const [filteredPackets, setFilteredPackets] = useState<CapturedPacketSummary[] | null>(null);
+  const [applyingFilter, setApplyingFilter] = useState(false);
+  const [exportOnlyFiltered, setExportOnlyFiltered] = useState(true);
+  const [exporting, setExporting] = useState<CaptureExportFormat | null>(null);
+  // See JwtTool.tsx's crackJobIdRef for why this is a ref: an event can in
+  // principle arrive before React re-renders and re-subscribes a listener
+  // that depends on `jobId` state, silently dropping it.
+  const jobIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     window.wraith.capture.checkAvailable().then(setAvailable);
-    window.wraith.capture.listInterfaces().then((list) => {
+    (async () => {
+      const list: { id: string; description: string }[] = await window.wraith.capture.listInterfaces();
       setInterfaces(list);
-      if (list.length > 0) setIface(list[0].id);
-    });
+      const settings = await window.wraith.settings.get();
+      const preferred = settings.general.defaultCaptureInterface;
+      if (preferred && list.some((i) => i.id === preferred)) setIface(preferred);
+      else if (list.length > 0) setIface(list[0].id);
+    })();
   }, []);
 
   useEffect(() => {
     const offPacket = window.wraith.capture.onPacket((p) => {
-      if (p.jobId !== jobId) return;
+      if (p.jobId !== jobIdRef.current) return;
       setPackets((cur) => [...cur, p]);
     });
     const offLog = window.wraith.capture.onLog((l) => {
-      if (l.jobId !== jobId) return;
+      if (l.jobId !== jobIdRef.current) return;
       setLogs((cur) => [...cur.slice(-100), l.line]);
     });
     const offClosed = window.wraith.capture.onClosed((c) => {
-      if (c.jobId !== jobId) return;
+      if (c.jobId !== jobIdRef.current) return;
+      jobIdRef.current = null;
       setJobId(null);
     });
     return () => {
@@ -50,18 +84,22 @@ export function Capture() {
       offLog();
       offClosed();
     };
-  }, [jobId]);
+  }, []);
 
   const start = async () => {
     setPackets([]);
     setSelected(null);
-    const res = await window.wraith.capture.start({ interfaceName: iface, bpfFilter: filter });
+    setFilteredPackets(null);
+    setDisplayFilterText("");
+    const res = await window.wraith.capture.start({ interfaceName: iface, bpfFilter: capFilter });
+    jobIdRef.current = res.jobId;
     setJobId(res.jobId);
     setPcapPath(res.pcapPath);
   };
 
   const stop = async () => {
     if (jobId) await window.wraith.capture.stop(jobId);
+    jobIdRef.current = null;
     setJobId(null);
   };
 
@@ -73,11 +111,53 @@ export function Capture() {
     setDetail(text);
   };
 
+  const applyDisplayFilter = async () => {
+    if (!pcapPath) return;
+    if (!displayFilterText.trim()) {
+      setFilteredPackets(null);
+      return;
+    }
+    setApplyingFilter(true);
+    try {
+      const result = await window.wraith.capture.applyFilter(pcapPath, displayFilterText);
+      setFilteredPackets(result);
+    } catch (err: any) {
+      alert(`Filter error: ${err?.message || err}`);
+    } finally {
+      setApplyingFilter(false);
+    }
+  };
+
+  const clearDisplayFilter = () => {
+    setDisplayFilterText("");
+    setFilteredPackets(null);
+  };
+
+  const doExport = async (format: CaptureExportFormat) => {
+    if (!pcapPath) return;
+    const destPath = await window.wraith.app.chooseSaveFile(`capture.${format}`);
+    if (!destPath) return;
+    setExporting(format);
+    try {
+      await window.wraith.capture.export({
+        pcapPath,
+        format,
+        destPath,
+        displayFilter: exportOnlyFiltered && displayFilterText.trim() ? displayFilterText : undefined,
+      });
+    } catch (err: any) {
+      alert(`Export failed: ${err?.message || err}`);
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const basePackets = filteredPackets ?? packets;
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return packets;
-    return packets.filter((p) => [p.source, p.destination, p.protocol, p.info].join(" ").toLowerCase().includes(q));
-  }, [packets, search]);
+    if (!q) return basePackets;
+    return basePackets.filter((p) => [p.source, p.destination, p.protocol, p.info].join(" ").toLowerCase().includes(q));
+  }, [basePackets, search]);
 
   if (available && !available.available) {
     return (
@@ -117,9 +197,9 @@ export function Capture() {
           </select>
           <input
             type="text"
-            placeholder="BPF filter, e.g. tcp port 443"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Capture filter (BPF), e.g. tcp port 443"
+            value={capFilter}
+            onChange={(e) => setCapFilter(e.target.value)}
             disabled={!!jobId}
             style={{ width: 240 }}
           />
@@ -132,8 +212,61 @@ export function Capture() {
               <IconPlay size={13} /> Start capture
             </button>
           )}
-          <input type="search" placeholder="Filter list…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 200, marginLeft: "auto" }} />
+          <input type="search" placeholder="Filter list…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 180, marginLeft: "auto" }} />
         </div>
+
+        {pcapPath && (
+          <>
+            <hr className="divider" />
+            <div className="row wrap" style={{ gap: 8 }}>
+              <input
+                type="text"
+                placeholder='Display filter, e.g. tcp.port == 443 && http'
+                value={displayFilterText}
+                onChange={(e) => setDisplayFilterText(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && applyDisplayFilter()}
+                style={{ width: 300, fontFamily: "var(--font-mono)" }}
+              />
+              <button className="btn btn-sm" onClick={applyDisplayFilter} disabled={applyingFilter}>
+                {applyingFilter ? "Applying…" : "Apply"}
+              </button>
+              {filteredPackets !== null && (
+                <button className="btn btn-ghost btn-sm" onClick={clearDisplayFilter}>
+                  Clear
+                </button>
+              )}
+              {filteredPackets !== null && <span className="muted">{filteredPackets.length} match(es)</span>}
+
+              <details style={{ marginLeft: 4 }}>
+                <summary className="muted" style={{ cursor: "pointer" }}>
+                  Filter cheat sheet
+                </summary>
+                <div className="stack-sm" style={{ marginTop: 8, maxWidth: 560 }}>
+                  {FILTER_EXAMPLES.map((f) => (
+                    <div key={f.filter} className="row wrap" style={{ gap: 8, cursor: "pointer" }} onClick={() => setDisplayFilterText(f.filter)}>
+                      <code className="mono" style={{ color: "var(--accent-a)", flex: "0 0 260px" }}>
+                        {f.filter}
+                      </code>
+                      <span className="muted">{f.desc}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+
+              <div className="row" style={{ gap: 8, marginLeft: "auto" }}>
+                <label className="row" style={{ gap: 6 }}>
+                  <input type="checkbox" checked={exportOnlyFiltered} onChange={(e) => setExportOnlyFiltered(e.target.checked)} />
+                  <span className="muted">only filtered</span>
+                </label>
+                {EXPORT_FORMATS.map((f) => (
+                  <button key={f} className="btn btn-sm" onClick={() => doExport(f)} disabled={exporting !== null}>
+                    <IconDownload size={12} /> {exporting === f ? "…" : f}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="split" style={{ flex: 1, minHeight: 0 }}>

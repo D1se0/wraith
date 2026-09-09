@@ -1,10 +1,56 @@
 import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import * as zlib from "zlib";
+import { pipeline } from "stream/promises";
 import { randomUUID } from "crypto";
 import { JobRunner } from "../jobs";
-import { tmpDir } from "../store";
-import { CrackerJobRequest, CrackerTool } from "../types";
+import { tmpDir, wraithRoot } from "../store";
+import { CrackerJobRequest, CrackerTool, DefaultWordlistInfo } from "../types";
+
+const ROCKYOU_CANDIDATES = [
+  "/usr/share/wordlists/rockyou.txt",
+  "/usr/share/wordlists/rockyou.txt.gz",
+  "/usr/local/share/wordlists/rockyou.txt",
+  "/opt/wordlists/rockyou.txt",
+];
+
+/**
+ * Looks for Kali's bundled rockyou.txt so the Cracker tab can default to
+ * it instead of forcing every user to go find a wordlist first. Handles
+ * both the plain file and the gzipped form some distros/packages ship
+ * (`apt install wordlists` on Debian leaves it as rockyou.txt.gz).
+ */
+export function findDefaultWordlist(): DefaultWordlistInfo {
+  const extractedPath = path.join(wraithRoot(), "wordlists", "rockyou.txt");
+  if (fs.existsSync(extractedPath)) {
+    return { path: extractedPath, needsExtraction: false, sizeBytes: fs.statSync(extractedPath).size };
+  }
+  for (const candidate of ROCKYOU_CANDIDATES) {
+    if (!fs.existsSync(candidate)) continue;
+    if (candidate.endsWith(".gz")) {
+      return { path: null, needsExtraction: true };
+    }
+    return { path: candidate, needsExtraction: false, sizeBytes: fs.statSync(candidate).size };
+  }
+  return { path: null, needsExtraction: false };
+}
+
+/** Extracts whichever rockyou.txt.gz findDefaultWordlist() found into our own data folder (no root needed, unlike writing back into /usr/share). */
+export async function extractDefaultWordlist(): Promise<DefaultWordlistInfo> {
+  const gzPath = ROCKYOU_CANDIDATES.find((c) => c.endsWith(".gz") && fs.existsSync(c));
+  if (!gzPath) return findDefaultWordlist();
+
+  const destDir = path.join(wraithRoot(), "wordlists");
+  fs.mkdirSync(destDir, { recursive: true });
+  const destPath = path.join(destDir, "rockyou.txt");
+  const tmpPath = `${destPath}.partial`;
+
+  await pipeline(fs.createReadStream(gzPath), zlib.createGunzip(), fs.createWriteStream(tmpPath));
+  fs.renameSync(tmpPath, destPath);
+
+  return { path: destPath, needsExtraction: false, sizeBytes: fs.statSync(destPath).size };
+}
 
 export interface CrackerAvailability {
   john: { available: boolean; version?: string };
@@ -131,7 +177,11 @@ export class CrackerRunner {
       args.push(req.mask || "?a?a?a?a?a?a");
     } else if (req.wordlistFile) {
       args.push(req.wordlistFile);
-      if (req.rulesEnabled) args.push("-r", "/usr/share/hashcat/rules/best64.rule");
+      // hashcat has no bundled default ruleset the way John does -- only
+      // apply -r when the user actually picked a .rule file, otherwise
+      // this used to point at a hardcoded path that doesn't exist on a
+      // stock install and would make every rules-enabled run fail outright.
+      if (req.rulesEnabled && req.rulesFile) args.push("-r", req.rulesFile);
     }
     if (req.extraArgs) args.push(...splitArgs(req.extraArgs));
     this.runner.run(jobId, "hashcat", args);

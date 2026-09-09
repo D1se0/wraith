@@ -18,6 +18,19 @@ export function caCertPath(): string {
   return path.join(sslCaDir(), "certs", "ca.pem");
 }
 
+/**
+ * Wipes the whole CA folder (root cert/key + every per-host cert signed
+ * off it) so http-mitm-proxy generates a brand new root CA the next time
+ * the proxy starts. Callers must stop the proxy first -- deleting these
+ * files out from under a running http-mitm-proxy instance would leave it
+ * signing against files that no longer exist.
+ */
+export function regenerateCa(): void {
+  const dir = sslCaDir();
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(dir, { recursive: true });
+}
+
 export function readCaCertInfo(): DiscoveredCertInfo | null {
   const p = caCertPath();
   if (!fs.existsSync(p)) return null;

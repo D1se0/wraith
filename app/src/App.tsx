@@ -10,6 +10,7 @@ import { Capture } from "./pages/Capture";
 import { Cracker } from "./pages/Cracker";
 import { CurlBuilder } from "./pages/CurlBuilder";
 import { Crawler } from "./pages/Crawler";
+import { JwtTool } from "./pages/JwtTool";
 import { Settings } from "./pages/Settings";
 
 function Shell() {
@@ -32,6 +33,7 @@ function Shell() {
           {page === "cracker" && <Cracker />}
           {page === "curl" && <CurlBuilder />}
           {page === "crawler" && <Crawler />}
+          {page === "jwt" && <JwtTool />}
         </div>
       </div>
     </div>

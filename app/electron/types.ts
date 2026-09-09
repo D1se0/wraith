@@ -105,9 +105,28 @@ export interface ProxySettings {
   maxBodyCaptureBytes: number;
 }
 
+export interface GeneralSettings {
+  /** cap on how many exchanges the in-memory History buffer keeps (oldest are dropped) */
+  historyLimit: number;
+  /** ask for confirmation before Drop in Intercept (request or response) */
+  confirmBeforeDrop: boolean;
+  /** flash the Intercept nav item / page when a new request is held */
+  interceptAlertEnabled: boolean;
+  /** default network interface pre-selected on the Capture page */
+  defaultCaptureInterface: string;
+  /** default wordlist path pre-filled on the Cracker page (empty = auto-detect rockyou.txt) */
+  defaultWordlist: string;
+  /** accent color pair driving the app's gradient (hex, no #) */
+  accentFrom: string;
+  accentTo: string;
+  /** open devtools automatically on launch (dev convenience, off by default) */
+  openDevToolsOnStart: boolean;
+}
+
 export interface WraithSettings {
   proxy: ProxySettings;
   highlightRules: HighlightRule[];
+  general: GeneralSettings;
   theme: "wraith-dark";
   firstRunComplete: boolean;
 }
@@ -164,10 +183,22 @@ export interface CrackerJobRequest {
   wordlistFile?: string;
   hashcatMode?: string;
   johnFormat?: string;
+  /** John: turns on --rules (uses its bundled default ruleset, no file needed).
+   *  hashcat: only applied if rulesFile is also set (hashcat has no built-in default). */
   rulesEnabled?: boolean;
+  /** hashcat -r <file>; ignored by John (which uses rulesEnabled instead). */
+  rulesFile?: string;
   extraArgs?: string;
   attackMode?: "wordlist" | "bruteforce" | "mask";
   mask?: string;
+}
+
+export interface DefaultWordlistInfo {
+  /** absolute path to a ready-to-use wordlist, or null if none found/extracted yet */
+  path: string | null;
+  /** rockyou.txt.gz found but not extracted -- call cracker.extractRockyou() first */
+  needsExtraction: boolean;
+  sizeBytes?: number;
 }
 
 export interface CrackerJobEvent {
@@ -260,4 +291,99 @@ export interface ProxyStatus {
   running: boolean;
   port: number;
   host: string;
+}
+
+// --------------------------------------------------------------------- JWT
+
+export type JwtAlgorithm =
+  | "none"
+  | "HS256"
+  | "HS384"
+  | "HS512"
+  | "RS256"
+  | "RS384"
+  | "RS512"
+  | "ES256"
+  | "ES384"
+  | "ES512";
+
+export interface JwtDecodeResult {
+  wellFormed: boolean;
+  header: any;
+  payload: any;
+  headerRaw: string;
+  payloadRaw: string;
+  signatureB64Url: string;
+  algorithm: string | null;
+  error?: string;
+}
+
+export interface JwtSignRequest {
+  headerJson: string;
+  payloadJson: string;
+  algorithm: JwtAlgorithm;
+  /** HMAC secret (HS-family) as plain text, or PEM private key (RS/ES-family) */
+  secretOrKey: string;
+}
+
+export interface JwtSignResult {
+  token: string;
+  error?: string;
+}
+
+export interface JwtVerifyRequest {
+  token: string;
+  /** HMAC secret (HS-family) as plain text, or PEM public key (RS/ES-family) */
+  secretOrKey: string;
+  /** override the algorithm instead of trusting the token's own header (recommended, avoids alg-confusion) */
+  algorithm?: JwtAlgorithm;
+}
+
+export interface JwtVerifyResult {
+  valid: boolean;
+  algorithm: string;
+  reason?: string;
+}
+
+export interface JwtCrackRequest {
+  token: string;
+  wordlistFile: string;
+}
+
+export interface JwtCrackHandle {
+  jobId: string;
+}
+
+export interface JwtCrackEvent {
+  jobId: string;
+  type: "progress" | "found" | "done" | "error";
+  tried?: number;
+  ratePerSec?: number;
+  secret?: string;
+  message?: string;
+}
+
+// ----------------------------------------------------------- capture extra
+
+export interface CaptureFilterRequest {
+  pcapPath: string;
+  displayFilter: string;
+}
+
+export type CaptureExportFormat = "pcap" | "pcapng" | "json" | "csv";
+
+export interface CaptureExportRequest {
+  pcapPath: string;
+  format: CaptureExportFormat;
+  destPath: string;
+  /** apply this display filter before exporting, if set */
+  displayFilter?: string;
+}
+
+// -------------------------------------------------------------- misc I/O
+
+export interface WriteFileRequest {
+  path: string;
+  content: string;
+  encoding?: "utf-8" | "base64";
 }

@@ -1,17 +1,28 @@
 import { ipcMain, shell, dialog, app, BrowserWindow } from "electron";
 import * as fs from "fs";
 import * as path from "path";
+import { randomUUID } from "crypto";
 import { WraithProxy } from "./proxy/engine";
 import { loadSettings, updateSettings, getHistory, appendExchange, updateExchange, clearHistory, purgeAllWraithData, wraithRoot } from "./store";
 import { listLocalAddresses } from "./network";
-import { readCaCertInfo, caCertPath } from "./ca";
+import { readCaCertInfo, caCertPath, regenerateCa } from "./ca";
 import { runCodec } from "./codec";
 import { repeaterSend } from "./repeater";
 import { runCurl } from "./curlTool/runner";
-import { checkCrackerAvailable, listHashcatModes, listJohnFormats, CrackerRunner, readCrackedResults } from "./cracker/johnHashcat";
-import { checkTsharkAvailable, listCaptureInterfaces, CaptureSession, readPacketDetail } from "./capture/tshark";
+import {
+  checkCrackerAvailable,
+  listHashcatModes,
+  listJohnFormats,
+  CrackerRunner,
+  readCrackedResults,
+  findDefaultWordlist,
+  extractDefaultWordlist,
+} from "./cracker/johnHashcat";
+import { checkTsharkAvailable, listCaptureInterfaces, CaptureSession, readPacketDetail, applyDisplayFilter, exportCapture } from "./capture/tshark";
 import { Crawler } from "./crawler/crawler";
-import { CrackerJobRequest, CaptureStartRequest, CrawlerRequest, Exchange } from "./types";
+import { decodeJwt, signJwt, verifyJwt, JwtCracker } from "./jwt";
+import { CrackerJobRequest, CaptureStartRequest, CrawlerRequest, Exchange, WriteFileRequest, JwtSignRequest, JwtVerifyRequest, JwtCrackRequest, CaptureExportRequest } from "./types";
+import * as fsp from "fs/promises";
 
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set(["http:", "https:"]);
 
@@ -56,6 +67,11 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null) {
     purgeAllWraithData();
   });
 
+  ipcMain.handle("app:writeFile", async (_e, req: WriteFileRequest) => {
+    const buf = Buffer.from(req.content, req.encoding === "base64" ? "base64" : "utf-8");
+    await fsp.writeFile(req.path, buf);
+  });
+
   // ----------------------------------------------------------- settings
   ipcMain.handle("settings:get", () => loadSettings());
   ipcMain.handle("settings:update", (_e, patch) => updateSettings(patch));
@@ -76,6 +92,13 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null) {
     const src = caCertPath();
     if (fs.existsSync(src)) shell.showItemInFolder(src);
     else shell.openPath(path.dirname(src));
+  });
+  ipcMain.handle("ca:regenerate", async () => {
+    const wasRunning = proxy.isRunning();
+    if (wasRunning) await proxy.stop();
+    regenerateCa();
+    if (wasRunning) await proxy.start();
+    return readCaCertInfo();
   });
 
   // --------------------------------------------------------------- codec
@@ -159,6 +182,8 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null) {
   });
   ipcMain.handle("cracker:stop", (_e, jobId: string) => cracker.stop(jobId));
   ipcMain.handle("cracker:readResults", (_e, handle) => readCrackedResults(handle));
+  ipcMain.handle("cracker:defaultWordlist", () => findDefaultWordlist());
+  ipcMain.handle("cracker:extractRockyou", () => extractDefaultWordlist());
 
   // ------------------------------------------------------------- capture
   const captureSessions = new Map<string, CaptureSession>();
@@ -181,6 +206,25 @@ export function registerIpcHandlers(getWindow: () => BrowserWindow | null) {
     captureSessions.get(jobId)?.stop();
   });
   ipcMain.handle("capture:packetDetail", (_e, pcapPath: string, frameNumber: number) => readPacketDetail(pcapPath, frameNumber));
+  ipcMain.handle("capture:applyFilter", (_e, pcapPath: string, displayFilter: string) => applyDisplayFilter(pcapPath, displayFilter));
+  ipcMain.handle("capture:export", (_e, req: CaptureExportRequest) =>
+    exportCapture(req.pcapPath, req.format, req.destPath, req.displayFilter)
+  );
+
+  // ----------------------------------------------------------------- jwt
+  ipcMain.handle("jwt:decode", (_e, token: string) => decodeJwt(token));
+  ipcMain.handle("jwt:sign", (_e, req: JwtSignRequest) => signJwt(req));
+  ipcMain.handle("jwt:verify", (_e, req: JwtVerifyRequest) => verifyJwt(req));
+
+  const jwtCracker = new JwtCracker();
+  jwtCracker.on("event", (evt) => send("jwt:crackEvent", evt));
+
+  ipcMain.handle("jwt:crackStart", (_e, req: JwtCrackRequest) => {
+    const jobId = randomUUID();
+    jwtCracker.run(jobId, req).catch((err) => send("jwt:crackEvent", { jobId, type: "error", message: String(err?.message || err) }));
+    return { jobId };
+  });
+  ipcMain.handle("jwt:crackStop", (_e, jobId: string) => jwtCracker.cancel(jobId));
 
   // ------------------------------------------------------------- crawler
   const crawlers = new Map<string, Crawler>();

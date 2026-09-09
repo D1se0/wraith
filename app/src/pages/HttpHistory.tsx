@@ -5,7 +5,7 @@ import { TagPills, firstMatchColor } from "../components/TagPills";
 import { ResponseViewer } from "../components/ResponseViewer";
 import { base64ToUtf8, base64ToBytes, formatBytes, isLikelyBinary } from "../lib/base64";
 import { prettyPrintMaybeJson, headersToText } from "../lib/format";
-import { IconStar, IconSend, IconTrash } from "../lib/icons";
+import { IconStar, IconSend, IconTrash, IconDownload } from "../lib/icons";
 import { useApp } from "../context/AppContext";
 
 export function HttpHistory() {
@@ -62,6 +62,52 @@ export function HttpHistory() {
     toast("Sent to Repeater");
   };
 
+  const exportRows = () =>
+    filtered.map((e) => ({
+      id: e.id,
+      method: e.request.method,
+      url: e.request.url,
+      host: e.host,
+      port: e.port,
+      isSSL: e.isSSL,
+      statusCode: e.dropped ? "dropped" : e.response?.statusCode ?? "",
+      statusMessage: e.response?.statusMessage ?? "",
+      sizeBytes: e.response ? base64ToBytes(e.response.body).length : 0,
+      timeMs: e.response?.timeMs ?? (e.finishedAt ? e.finishedAt - e.startedAt : ""),
+      tags: e.tags.join(";"),
+      startedAt: new Date(e.startedAt).toISOString(),
+      finishedAt: e.finishedAt ? new Date(e.finishedAt).toISOString() : "",
+      starred: !!e.starred,
+      fromTool: e.fromTool ?? "proxy",
+    }));
+
+  const exportJson = async () => {
+    const path = await window.wraith.app.chooseSaveFile("wraith-history.json");
+    if (!path) return;
+    try {
+      await window.wraith.app.writeFile({ path, content: JSON.stringify(exportRows(), null, 2), encoding: "utf-8" });
+      toast(`Exported ${filtered.length} exchange(s) to ${path}`);
+    } catch (err: any) {
+      toast(`Export failed: ${err?.message || err}`, "error");
+    }
+  };
+
+  const csvCell = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`;
+
+  const exportCsv = async () => {
+    const path = await window.wraith.app.chooseSaveFile("wraith-history.csv");
+    if (!path) return;
+    try {
+      const rows = exportRows();
+      const headers = Object.keys(rows[0] || { id: "", method: "", url: "", host: "", port: "", isSSL: "", statusCode: "", statusMessage: "", sizeBytes: "", timeMs: "", tags: "", startedAt: "", finishedAt: "", starred: "", fromTool: "" });
+      const lines = [headers.map(csvCell).join(","), ...rows.map((r) => headers.map((h) => csvCell((r as any)[h])).join(","))];
+      await window.wraith.app.writeFile({ path, content: lines.join("\n"), encoding: "utf-8" });
+      toast(`Exported ${filtered.length} exchange(s) to ${path}`);
+    } catch (err: any) {
+      toast(`Export failed: ${err?.message || err}`, "error");
+    }
+  };
+
   return (
     <div className="stack" style={{ height: "100%" }}>
       <div className="row between">
@@ -71,6 +117,12 @@ export function HttpHistory() {
         </div>
         <div className="row">
           <input type="search" placeholder="Search method, url, status, tags…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 260 }} />
+          <button className="btn btn-sm" onClick={exportCsv} disabled={filtered.length === 0} title="Export the currently-filtered list as CSV">
+            <IconDownload size={13} /> CSV
+          </button>
+          <button className="btn btn-sm" onClick={exportJson} disabled={filtered.length === 0} title="Export the currently-filtered list as JSON">
+            <IconDownload size={13} /> JSON
+          </button>
           <button className="btn btn-danger btn-sm" onClick={clear}>
             <IconTrash size={13} /> Clear
           </button>

@@ -7,6 +7,7 @@ const LINKS = [
   { href: "#how-it-works", label: "How it works" },
   { href: "#install", label: "Install" },
   { href: "#showcase", label: "Showcase" },
+  { href: "#/docs", label: "Docs" },
 ];
 
 export function Nav({ githubUrl }: { githubUrl?: string }) {

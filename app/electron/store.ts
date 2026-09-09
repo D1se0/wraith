@@ -49,6 +49,16 @@ export function defaultSettings(): WraithSettings {
       maxBodyCaptureBytes: 5 * 1024 * 1024,
     },
     highlightRules: DEFAULT_HIGHLIGHT_RULES,
+    general: {
+      historyLimit: 5000,
+      confirmBeforeDrop: false,
+      interceptAlertEnabled: true,
+      defaultCaptureInterface: "",
+      defaultWordlist: "",
+      accentFrom: "37e6c4",
+      accentTo: "7c5cff",
+      openDevToolsOnStart: false,
+    },
     theme: "wraith-dark",
     firstRunComplete: false,
   };
@@ -62,7 +72,12 @@ export function loadSettings(): WraithSettings {
   try {
     const raw = fs.readFileSync(SETTINGS_PATH(), "utf-8");
     const parsed = JSON.parse(raw);
-    resolved = { ...defaultSettings(), ...parsed, proxy: { ...defaultSettings().proxy, ...parsed.proxy } };
+    resolved = {
+      ...defaultSettings(),
+      ...parsed,
+      proxy: { ...defaultSettings().proxy, ...parsed.proxy },
+      general: { ...defaultSettings().general, ...parsed.general },
+    };
   } catch {
     resolved = defaultSettings();
   }
@@ -76,7 +91,13 @@ export function saveSettings(settings: WraithSettings): void {
 }
 
 export function updateSettings(patch: Partial<WraithSettings>): WraithSettings {
-  const next = { ...loadSettings(), ...patch };
+  const current = loadSettings();
+  const next: WraithSettings = {
+    ...current,
+    ...patch,
+    proxy: { ...current.proxy, ...patch.proxy },
+    general: { ...current.general, ...patch.general },
+  };
   saveSettings(next);
   return next;
 }
@@ -86,7 +107,7 @@ export function updateSettings(patch: Partial<WraithSettings>): WraithSettings {
  * backs fast reads for the renderer. Capped so long sessions don't grow
  * memory/disk unbounded.
  */
-const MAX_HISTORY_IN_MEMORY = 5000;
+const DEFAULT_HISTORY_LIMIT = 5000;
 let historyBuffer: Exchange[] = [];
 let historyStream: fs.WriteStream | null = null;
 
@@ -96,8 +117,9 @@ export function initHistory(): void {
 
 export function appendExchange(exchange: Exchange): void {
   historyBuffer.push(exchange);
-  if (historyBuffer.length > MAX_HISTORY_IN_MEMORY) {
-    historyBuffer.splice(0, historyBuffer.length - MAX_HISTORY_IN_MEMORY);
+  const limit = loadSettings().general?.historyLimit || DEFAULT_HISTORY_LIMIT;
+  if (historyBuffer.length > limit) {
+    historyBuffer.splice(0, historyBuffer.length - limit);
   }
   historyStream?.write(JSON.stringify(exchange) + "\n");
 }

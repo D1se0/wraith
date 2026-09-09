@@ -56,3 +56,14 @@ export const IconWifi = (p: IconProps) => base(<><path d="M3 9a15 15 0 0 1 18 0"
 export const IconLock = (p: IconProps) => base(<><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" /></>, p);
 export const IconWarning = (p: IconProps) => base(<><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4" /><circle cx="12" cy="17" r="0.8" fill="currentColor" /></>, p);
 export const IconCheck = (p: IconProps) => base(<path d="M5 13l4 4L19 7" />, p);
+export const IconDownload = (p: IconProps) => base(<><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></>, p);
+export const IconJwt = (p: IconProps) =>
+  base(
+    <>
+      <circle cx="4.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="19.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <path d="M6.6 12h3.8M13.6 12h3.8" />
+    </>,
+    p
+  );

@@ -17,6 +17,16 @@ import {
   CapturedPacketSummary,
   CrawlerRequest,
   CrawlerEvent,
+  WriteFileRequest,
+  DefaultWordlistInfo,
+  CaptureExportRequest,
+  JwtDecodeResult,
+  JwtSignRequest,
+  JwtSignResult,
+  JwtVerifyRequest,
+  JwtVerifyResult,
+  JwtCrackRequest,
+  JwtCrackEvent,
 } from "./types";
 
 function on<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -48,6 +58,7 @@ const api = {
       ipcRenderer.invoke("app:chooseFile", filters),
     chooseSaveFile: (defaultName?: string): Promise<string | null> => ipcRenderer.invoke("app:chooseSaveFile", defaultName),
     purgeAllData: (): Promise<void> => ipcRenderer.invoke("app:purgeAllData"),
+    writeFile: (req: WriteFileRequest): Promise<void> => ipcRenderer.invoke("app:writeFile", req),
     platform: process.platform,
   },
   settings: {
@@ -61,6 +72,7 @@ const api = {
     info: (): Promise<DiscoveredCertInfo | null> => ipcRenderer.invoke("ca:info"),
     exportToDesktop: (): Promise<string> => ipcRenderer.invoke("ca:exportToDesktop"),
     openFolder: (): Promise<void> => ipcRenderer.invoke("ca:openFolder"),
+    regenerate: (): Promise<DiscoveredCertInfo | null> => ipcRenderer.invoke("ca:regenerate"),
   },
   codec: {
     run: (req: CodecRequest): Promise<CodecResult> => ipcRenderer.invoke("codec:run", req),
@@ -102,6 +114,8 @@ const api = {
     stop: (jobId: string): Promise<boolean> => ipcRenderer.invoke("cracker:stop", jobId),
     readResults: (handle: any) => ipcRenderer.invoke("cracker:readResults", handle),
     onEvent: (cb: (evt: CrackerJobEvent) => void) => on("cracker:event", cb),
+    defaultWordlist: (): Promise<DefaultWordlistInfo> => ipcRenderer.invoke("cracker:defaultWordlist"),
+    extractRockyou: (): Promise<DefaultWordlistInfo> => ipcRenderer.invoke("cracker:extractRockyou"),
   },
   capture: {
     checkAvailable: () => ipcRenderer.invoke("capture:checkAvailable"),
@@ -110,9 +124,20 @@ const api = {
     stop: (jobId: string): Promise<void> => ipcRenderer.invoke("capture:stop", jobId),
     packetDetail: (pcapPath: string, frameNumber: number): Promise<string> =>
       ipcRenderer.invoke("capture:packetDetail", pcapPath, frameNumber),
+    applyFilter: (pcapPath: string, displayFilter: string): Promise<CapturedPacketSummary[]> =>
+      ipcRenderer.invoke("capture:applyFilter", pcapPath, displayFilter),
+    export: (req: CaptureExportRequest): Promise<void> => ipcRenderer.invoke("capture:export", req),
     onPacket: (cb: (p: CapturedPacketSummary & { jobId: string }) => void) => on("capture:packet", cb),
     onLog: (cb: (payload: { jobId: string; line: string }) => void) => on("capture:log", cb),
     onClosed: (cb: (payload: { jobId: string; code: number | null }) => void) => on("capture:closed", cb),
+  },
+  jwt: {
+    decode: (token: string): Promise<JwtDecodeResult> => ipcRenderer.invoke("jwt:decode", token),
+    sign: (req: JwtSignRequest): Promise<JwtSignResult> => ipcRenderer.invoke("jwt:sign", req),
+    verify: (req: JwtVerifyRequest): Promise<JwtVerifyResult> => ipcRenderer.invoke("jwt:verify", req),
+    crackStart: (req: JwtCrackRequest): Promise<{ jobId: string }> => ipcRenderer.invoke("jwt:crackStart", req),
+    crackStop: (jobId: string): Promise<void> => ipcRenderer.invoke("jwt:crackStop", jobId),
+    onCrackEvent: (cb: (evt: JwtCrackEvent) => void) => on("jwt:crackEvent", cb),
   },
   crawler: {
     start: (req: CrawlerRequest): Promise<{ jobId: string }> => ipcRenderer.invoke("crawler:start", req),

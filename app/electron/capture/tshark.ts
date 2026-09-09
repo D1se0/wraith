@@ -1,9 +1,10 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
+import * as fs from "fs";
 import * as path from "path";
 import { randomUUID } from "crypto";
 import { JobRunner } from "../jobs";
 import { tmpDir } from "../store";
-import { CapturedPacketSummary } from "../types";
+import { CapturedPacketSummary, CaptureExportFormat } from "../types";
 
 const TSHARK_BIN = process.platform === "win32" ? "tshark.exe" : "tshark";
 
@@ -103,6 +104,72 @@ export class CaptureSession {
   stop() {
     this.runner.kill(this.jobId);
   }
+}
+
+/**
+ * Re-reads an already-captured file through a Wireshark-style display
+ * filter (e.g. "tcp.port == 443 && http") -- distinct from the BPF
+ * capture filter you set when starting a capture, this one can be
+ * changed and re-applied after the fact without recapturing anything.
+ * Frame numbers are preserved from the original file, so a filtered
+ * row's "id" still works with readPacketDetail().
+ */
+export function applyDisplayFilter(pcapPath: string, displayFilter: string): Promise<CapturedPacketSummary[]> {
+  return new Promise((resolve, reject) => {
+    const args = ["-r", pcapPath];
+    if (displayFilter && displayFilter.trim()) args.push("-Y", displayFilter.trim());
+    execFile(TSHARK_BIN, args, { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err && !stdout) {
+        reject(new Error(stderr || err.message));
+        return;
+      }
+      const packets: CapturedPacketSummary[] = [];
+      for (const line of stdout.split("\n")) {
+        const m = line.match(LINE_RE);
+        if (!m) continue;
+        packets.push({
+          id: Number(m[1]),
+          time: m[2],
+          source: m[3],
+          destination: m[4],
+          protocol: m[5],
+          length: Number(m[6]),
+          info: m[7],
+        });
+      }
+      resolve(packets);
+    });
+  });
+}
+
+const EXPORT_ARGS: Record<CaptureExportFormat, (destPath: string) => string[]> = {
+  pcap: (dest) => ["-w", dest, "-F", "pcap"],
+  pcapng: (dest) => ["-w", dest, "-F", "pcapng"],
+  json: () => ["-T", "json"],
+  csv: () => ["-T", "fields", "-e", "frame.number", "-e", "frame.time", "-e", "ip.src", "-e", "ip.dst", "-e", "_ws.col.Protocol", "-e", "frame.len", "-e", "_ws.col.Info", "-E", "header=y", "-E", "separator=,", "-E", "quote=d"],
+};
+
+/** Exports a capture to .pcap/.pcapng (native tshark -w) or .json/.csv (captured from stdout), optionally through a display filter first. */
+export function exportCapture(pcapPath: string, format: CaptureExportFormat, destPath: string, displayFilter?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const args = ["-r", pcapPath];
+    if (displayFilter && displayFilter.trim()) args.push("-Y", displayFilter.trim());
+    args.push(...EXPORT_ARGS[format](destPath));
+
+    const child = spawn(TSHARK_BIN, args, { windowsHide: true });
+    let stderr = "";
+    child.stderr.on("data", (d) => (stderr += d.toString()));
+
+    const writesToStdout = format === "json" || format === "csv";
+    const out = writesToStdout ? fs.createWriteStream(destPath) : null;
+    if (out) child.stdout.pipe(out);
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr || `tshark exited with code ${code}`));
+    });
+  });
 }
 
 export function readPacketDetail(pcapPath: string, frameNumber: number): Promise<string> {

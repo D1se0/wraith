@@ -1,20 +1,32 @@
 import { useEffect, useState } from "react";
-import { HighlightRule, ExchangeTag, WraithSettings } from "../../electron/types";
-import { IconPlus, IconTrash, IconExternal } from "../lib/icons";
+import { HighlightRule, ExchangeTag, WraithSettings, DiscoveredCertInfo, NetworkInterfaceInfo } from "../../electron/types";
+import { IconPlus, IconTrash, IconExternal, IconShield } from "../lib/icons";
 import { GITHUB_REPO_URL } from "../lib/constants";
 import { useApp } from "../context/AppContext";
 
 const TAGS: ExchangeTag[] = ["json", "graphql", "html", "xml", "js", "css", "image", "auth", "cookie", "form", "error", "websocket"];
+
+function toHexColor(hexNoHash: string): string {
+  return hexNoHash.startsWith("#") ? hexNoHash : `#${hexNoHash}`;
+}
+function stripHash(hex: string): string {
+  return hex.replace(/^#/, "");
+}
 
 export function Settings() {
   const { toast } = useApp();
   const [settings, setSettings] = useState<WraithSettings | null>(null);
   const [version, setVersion] = useState("");
   const [purgeConfirm, setPurgeConfirm] = useState("");
+  const [cert, setCert] = useState<DiscoveredCertInfo | null>(null);
+  const [interfaces, setInterfaces] = useState<NetworkInterfaceInfo["name"][]>([]);
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     window.wraith.settings.get().then(setSettings);
     window.wraith.app.getVersion().then(setVersion);
+    window.wraith.ca.info().then(setCert).catch(() => undefined);
+    window.wraith.capture.listInterfaces().then((ifaces: any[]) => setInterfaces(ifaces.map((i) => i.id)));
   }, []);
 
   if (!settings) return null;
@@ -25,6 +37,13 @@ export function Settings() {
   };
 
   const saveProxy = (patch: Partial<WraithSettings["proxy"]>) => save({ proxy: { ...settings.proxy, ...patch } });
+  const saveGeneral = (patch: Partial<WraithSettings["general"]>) => save({ general: { ...settings.general, ...patch } });
+
+  const setAccent = (which: "accentFrom" | "accentTo", hex: string) => {
+    const clean = stripHash(hex);
+    document.documentElement.style.setProperty(which === "accentFrom" ? "--accent-a" : "--accent-b", toHexColor(clean));
+    saveGeneral({ [which]: clean } as Partial<WraithSettings["general"]>);
+  };
 
   const updateRule = (id: string, patch: Partial<HighlightRule>) => {
     save({ highlightRules: settings.highlightRules.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
@@ -33,6 +52,18 @@ export function Settings() {
   const addRule = () => {
     const rule: HighlightRule = { id: `hl-${Date.now()}`, label: "New rule", enabled: true, color: "#4fb0ff", matchTag: "json", matchScope: "any" };
     save({ highlightRules: [...settings.highlightRules, rule] });
+  };
+
+  const regenerateCa = async () => {
+    if (!confirm("This invalidates the old certificate everywhere it's currently trusted — you'll need to re-trust the new one. Continue?")) return;
+    setRegenerating(true);
+    try {
+      const info = await window.wraith.ca.regenerate();
+      setCert(info);
+      toast(info ? "New CA generated." : "CA cleared — a new one will be generated next time you start the proxy.");
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   const purge = async () => {
@@ -78,6 +109,110 @@ export function Settings() {
           </div>
         </div>
         <span className="field-hint">Changing port/host takes effect the next time you start the proxy.</span>
+      </div>
+
+      <div className="panel">
+        <div className="panel-header">
+          <IconShield size={18} style={{ color: "var(--accent-a)" }} />
+          <div>
+            <div className="panel-title">Certificate Authority</div>
+            <div className="panel-sub">The self-signed root CA the proxy uses to terminate HTTPS.</div>
+          </div>
+        </div>
+        {!cert ? (
+          <div className="muted">No certificate yet — start the proxy once to generate one.</div>
+        ) : (
+          <div className="stack-sm">
+            <div className="mono faint" style={{ wordBreak: "break-all" }}>
+              SHA-256 {cert.fingerprintSha256}
+            </div>
+          </div>
+        )}
+        <div className="row wrap" style={{ marginTop: 10 }}>
+          <button
+            className="btn btn-sm"
+            disabled={!cert}
+            onClick={async () => {
+              const dest = await window.wraith.ca.exportToDesktop();
+              toast(`Exported to ${dest}`);
+            }}
+          >
+            Export cert to Desktop
+          </button>
+          <button className="btn btn-sm" disabled={!cert} onClick={() => window.wraith.ca.openFolder()}>
+            Open certificate folder
+          </button>
+          <button className="btn btn-danger btn-sm" disabled={regenerating} onClick={regenerateCa}>
+            {regenerating ? "Regenerating…" : "Regenerate CA certificate"}
+          </button>
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">General</div>
+        <div className="grid-2" style={{ marginTop: 12 }}>
+          <div className="field">
+            <label>History limit</label>
+            <input type="number" value={settings.general.historyLimit} onChange={(e) => saveGeneral({ historyLimit: Number(e.target.value) })} />
+            <span className="field-hint">How many exchanges History keeps in memory before dropping the oldest.</span>
+          </div>
+          <div className="field">
+            <label>Default capture interface</label>
+            <select value={settings.general.defaultCaptureInterface} onChange={(e) => saveGeneral({ defaultCaptureInterface: e.target.value })}>
+              <option value="">(none — ask each time)</option>
+              {interfaces.map((i) => (
+                <option key={i} value={i}>
+                  {i}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Default wordlist</label>
+            <div className="row">
+              <input type="text" value={settings.general.defaultWordlist} placeholder="(auto-detect rockyou.txt)" onChange={(e) => saveGeneral({ defaultWordlist: e.target.value })} />
+              <button
+                className="btn btn-sm"
+                onClick={async () => {
+                  const p = await window.wraith.app.chooseFile();
+                  if (p) saveGeneral({ defaultWordlist: p });
+                }}
+              >
+                Browse
+              </button>
+            </div>
+            <span className="field-hint">Manual override for the Cracker/JWT default wordlist — leave empty to auto-detect rockyou.txt.</span>
+          </div>
+          <div className="field">
+            <label>Accent color</label>
+            <div className="row" style={{ gap: 10 }}>
+              <input type="color" value={toHexColor(settings.general.accentFrom)} onChange={(e) => setAccent("accentFrom", e.target.value)} />
+              <input type="color" value={toHexColor(settings.general.accentTo)} onChange={(e) => setAccent("accentTo", e.target.value)} />
+            </div>
+          </div>
+          <div className="field">
+            <label>&nbsp;</label>
+            <label className="row" style={{ gap: 8 }}>
+              <input type="checkbox" checked={settings.general.confirmBeforeDrop} onChange={(e) => saveGeneral({ confirmBeforeDrop: e.target.checked })} />
+              Confirm before dropping a held request/response
+            </label>
+          </div>
+          <div className="field">
+            <label>&nbsp;</label>
+            <label className="row" style={{ gap: 8 }}>
+              <input type="checkbox" checked={settings.general.interceptAlertEnabled} onChange={(e) => saveGeneral({ interceptAlertEnabled: e.target.checked })} />
+              Flash red when Intercept captures something
+            </label>
+          </div>
+          <div className="field">
+            <label>&nbsp;</label>
+            <label className="row" style={{ gap: 8 }}>
+              <input type="checkbox" checked={settings.general.openDevToolsOnStart} onChange={(e) => saveGeneral({ openDevToolsOnStart: e.target.checked })} />
+              Open DevTools automatically on launch
+            </label>
+            <span className="field-hint">Takes effect next launch.</span>
+          </div>
+        </div>
       </div>
 
       <div className="panel">

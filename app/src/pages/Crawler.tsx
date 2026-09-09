@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CrawlerRequest } from "../../electron/types";
 import { StatusBadge } from "../components/StatusBadge";
 import { IconPlay, IconStop, IconExternal, IconSend } from "../lib/icons";
@@ -40,17 +40,24 @@ export function Crawler() {
   const [rows, setRows] = useState<FoundRow[]>([]);
   const [stats, setStats] = useState({ visited: 0, discovered: 0 });
   const [errors, setErrors] = useState<string[]>([]);
+  // See JwtTool.tsx's crackJobIdRef for why this is a ref: an event can in
+  // principle arrive before React re-renders and re-subscribes a listener
+  // that depends on `jobId` state, silently dropping it.
+  const jobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const off = window.wraith.crawler.onEvent((evt) => {
-      if (evt.jobId !== jobId) return;
+      if (evt.jobId !== jobIdRef.current) return;
       if (evt.type === "found") setRows((cur) => [...cur, { url: evt.url!, status: evt.status, contentType: evt.contentType, depth: evt.depth }]);
       if (evt.type === "progress") setStats({ visited: evt.visited || 0, discovered: evt.discovered || 0 });
       if (evt.type === "error" && evt.message) setErrors((cur) => [...cur.slice(-30), evt.message!]);
-      if (evt.type === "done") setJobId(null);
+      if (evt.type === "done") {
+        jobIdRef.current = null;
+        setJobId(null);
+      }
     });
     return off;
-  }, [jobId]);
+  }, []);
 
   const start = async () => {
     setRows([]);
@@ -58,11 +65,13 @@ export function Crawler() {
     setStats({ visited: 0, discovered: 0 });
     const req: CrawlerRequest = { startUrl, maxDepth, maxPages, concurrency, scopeHost, followSubdomains, respectRobots: false, techniques };
     const res = await window.wraith.crawler.start(req);
+    jobIdRef.current = res.jobId;
     setJobId(res.jobId);
   };
 
   const stop = async () => {
     if (jobId) await window.wraith.crawler.stop(jobId);
+    jobIdRef.current = null;
     setJobId(null);
   };
 

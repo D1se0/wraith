@@ -1,58 +1,46 @@
-import { useEffect, useState } from "react";
-import { useApp } from "../context/AppContext";
+import { useEffect, useRef, useState } from "react";
+import { useApp, EditableHeld } from "../context/AppContext";
 import { InterceptPending, ScopeRule, WraithSettings } from "../../electron/types";
 import { base64ToUtf8, utf8ToBase64 } from "../lib/base64";
-import { IconPlus, IconX, IconShield } from "../lib/icons";
-import { KV } from "../components/KeyValueEditor";
+import { IconPlus, IconX, IconShield, IconRepeat } from "../lib/icons";
 import { RequestEditor } from "../components/RequestEditor";
 import { ResponseViewer, kvToHeadersRecord } from "../components/ResponseViewer";
 
-interface EditableHeld {
-  method: string;
-  url: string;
-  headers: KV[];
-  bodyText: string;
-  statusCode?: number;
-  statusMessage?: string;
-}
-
-function headersRecordToKv(headers: Record<string, any>): KV[] {
-  return Object.entries(headers || {}).map(([key, v]) => ({ key, value: Array.isArray(v) ? v.join(", ") : String(v) }));
-}
-
 export function ProxyIntercept() {
-  const { proxyStatus, toast } = useApp();
+  const {
+    proxyStatus,
+    toast,
+    interceptQueue,
+    interceptEdits,
+    setInterceptEdit,
+    resolveIntercept,
+    forwardAllIntercepts,
+    interceptArrivalTick,
+    sendToRepeater,
+  } = useApp();
   const [settings, setSettings] = useState<WraithSettings | null>(null);
-  const [queue, setQueue] = useState<InterceptPending[]>([]);
-  const [edits, setEdits] = useState<Record<string, EditableHeld>>({});
   const [newScope, setNewScope] = useState("");
+  const [flashing, setFlashing] = useState(false);
+  const firstTick = useRef(true);
 
   useEffect(() => {
     window.wraith.settings.get().then(setSettings);
-    const off = window.wraith.proxy.onInterceptPending((pending) => {
-      setQueue((q) => [...q, pending]);
-      setEdits((e) => ({
-        ...e,
-        [pending.id]:
-          pending.direction === "request"
-            ? {
-                method: pending.request.method,
-                url: pending.request.url,
-                headers: headersRecordToKv(pending.request.headers),
-                bodyText: base64ToUtf8(pending.request.body),
-              }
-            : {
-                method: pending.request.method,
-                url: pending.request.url,
-                headers: headersRecordToKv(pending.response?.headers || {}),
-                bodyText: base64ToUtf8(pending.response?.body || ""),
-                statusCode: pending.response?.statusCode,
-                statusMessage: pending.response?.statusMessage,
-              },
-      }));
-    });
-    return off;
   }, []);
+
+  // Flash red for ~1.8s whenever a new item lands, then settle back to the
+  // steady amber "something is waiting" glow. Skip the very first render
+  // (arrival tick starts at 0, nothing has actually "just arrived" yet).
+  useEffect(() => {
+    if (firstTick.current) {
+      firstTick.current = false;
+      return;
+    }
+    if (settings && !settings.general.interceptAlertEnabled) return;
+    setFlashing(true);
+    const t = setTimeout(() => setFlashing(false), 1800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interceptArrivalTick]);
 
   const updateSetting = async (patch: Partial<WraithSettings["proxy"]>) => {
     if (!settings) return;
@@ -67,35 +55,33 @@ export function ProxyIntercept() {
     setNewScope("");
   };
 
-  const resolve = (pending: InterceptPending, action: "forward" | "drop") => {
-    const edit = edits[pending.id];
-    const edited =
-      action === "forward" && edit
-        ? pending.direction === "request"
-          ? { request: { method: edit.method, url: edit.url, headers: kvToHeadersRecord(edit.headers), body: utf8ToBase64(edit.bodyText) } }
-          : {
-              response: {
-                statusCode: edit.statusCode ?? 200,
-                statusMessage: edit.statusMessage ?? "OK",
-                headers: kvToHeadersRecord(edit.headers),
-                body: utf8ToBase64(edit.bodyText),
-              },
-            }
-        : undefined;
-    window.wraith.proxy.resolveIntercept({ id: pending.id, action, edited }).then(() => {
-      setQueue((q) => q.filter((p) => p.id !== pending.id));
-    });
+  const drop = (pending: InterceptPending) => {
+    if (settings?.general.confirmBeforeDrop && !confirm("Drop this request/response?")) return;
+    resolveIntercept(pending, "drop");
   };
 
   const forwardAll = async () => {
-    const n = await window.wraith.proxy.forwardAll();
-    setQueue([]);
+    const n = await forwardAllIntercepts();
     toast(`Forwarded ${n} held item(s)`);
   };
 
+  const sendActiveToRepeater = (pending: InterceptPending, edit: EditableHeld | null) => {
+    if (pending.direction === "request" && edit) {
+      sendToRepeater({ method: edit.method, url: edit.url, headers: edit.headers, body: edit.bodyText });
+    } else {
+      sendToRepeater({
+        method: pending.request.method,
+        url: pending.request.url,
+        headers: Object.entries(pending.request.headers).map(([key, v]) => ({ key, value: Array.isArray(v) ? v.join(", ") : String(v) })),
+        body: base64ToUtf8(pending.request.body),
+      });
+    }
+    toast("Sent to Repeater");
+  };
+
   if (!settings) return null;
-  const active = queue[0];
-  const activeEdit = active ? edits[active.id] : null;
+  const active = interceptQueue[0];
+  const activeEdit = active ? interceptEdits[active.id] : null;
 
   return (
     <div className="stack">
@@ -108,9 +94,9 @@ export function ProxyIntercept() {
         <div className="row wrap" style={{ gap: 20 }}>
           <Toggle label="Intercept requests" checked={settings.proxy.interceptRequests} onChange={(v) => updateSetting({ interceptRequests: v })} />
           <Toggle label="Intercept responses" checked={settings.proxy.interceptResponses} onChange={(v) => updateSetting({ interceptResponses: v })} />
-          {queue.length > 1 && (
+          {interceptQueue.length > 1 && (
             <button className="btn btn-sm" onClick={forwardAll}>
-              Forward all ({queue.length})
+              Forward all ({interceptQueue.length})
             </button>
           )}
         </div>
@@ -159,17 +145,17 @@ export function ProxyIntercept() {
       )}
 
       {active && activeEdit && (
-        <div className="panel pulse-card">
+        <div className={`panel pulse-card ${flashing ? "pulse-card-flash" : ""}`}>
           <div className="panel-header row between">
             <div className="panel-title">
               Held {active.direction === "request" ? "request" : "response"} — {active.host}
-              {queue.length > 1 && <span className="muted"> (+{queue.length - 1} more queued)</span>}
+              {interceptQueue.length > 1 && <span className="muted"> (+{interceptQueue.length - 1} more queued)</span>}
             </div>
           </div>
           {active.direction === "request" ? (
             <RequestEditor
               value={activeEdit}
-              onChange={(v) => setEdits((e) => ({ ...e, [active.id]: { ...e[active.id], ...v } }))}
+              onChange={(v) => setInterceptEdit(active.id, v)}
             />
           ) : (
             <ResponseViewer
@@ -182,21 +168,19 @@ export function ProxyIntercept() {
                 bodyTruncated: false,
                 timeMs: 0,
               }}
-              onChange={(v) =>
-                setEdits((e) => ({
-                  ...e,
-                  [active.id]: { ...e[active.id], statusCode: v.statusCode, statusMessage: v.statusMessage, headers: v.headers, bodyText: v.bodyText },
-                }))
-              }
+              onChange={(v) => setInterceptEdit(active.id, { statusCode: v.statusCode, statusMessage: v.statusMessage, headers: v.headers, bodyText: v.bodyText })}
             />
           )}
           <hr className="divider" />
           <div className="row" style={{ gap: 10 }}>
-            <button className="btn btn-primary" onClick={() => resolve(active, "forward")}>
+            <button className="btn btn-primary" onClick={() => resolveIntercept(active, "forward")}>
               Forward
             </button>
-            <button className="btn btn-danger" onClick={() => resolve(active, "drop")}>
+            <button className="btn btn-danger" onClick={() => drop(active)}>
               Drop
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => sendActiveToRepeater(active, activeEdit)}>
+              <IconRepeat size={13} /> Send to Repeater
             </button>
           </div>
         </div>

@@ -16,33 +16,57 @@ you exactly what's missing and how to install it if something isn't found.
 
 ## What's inside
 
-- **Intercepting HTTP(S) proxy** — a real on-the-fly MITM root CA (like
-  Burp/mitmproxy), request AND response interception (hold, edit, forward,
-  drop), full traffic history with **highlight rules** you control (JSON,
-  GraphQL, auth/cookies, 4xx/5xx, HTML, …), and a first-run **Welcome**
-  screen that shows your machine's IP + the proxy port and walks you
-  through FoxyProxy / browser setup and trusting the CA.
-- **Repeater** — multi-tab, resend and tweak any request.
+Sidebar order, top to bottom:
+
+- **Setup** — first-run screen: your machine's IP + the proxy port, tabbed
+  browser-configuration instructions (Firefox+FoxyProxy / Chrome / system-wide),
+  and CA certificate export + per-browser trust steps.
+- **Intercept** — a real on-the-fly MITM root CA (like Burp/mitmproxy),
+  request AND response interception (hold, edit, forward, drop), a
+  configurable scope, "send to Repeater" straight from a held item, and a
+  red flash on capture (sidebar + card) so you never miss one while
+  working another tab.
+- **History** — full traffic log with **highlight rules** you control
+  (JSON, GraphQL, auth/cookies, 4xx/5xx, HTML, …), client-side search, and
+  **CSV/JSON export** of the current view.
+- **Repeater** — multi-tab, resend and tweak any request, sandboxed HTML
+  render of responses.
 - **Decoder** — Base64, URL, hex, HTML entities, unicode escapes, gzip, JWT
-  decode, MD5/SHA1/SHA256.
-- **Packet capture ("Wireshark-lite")** — a live packet list backed by
-  `tshark`, click a packet for full protocol-dissection detail, BPF filter
-  support — without Wireshark's sprawling menus.
-- **Hash cracking** — a GUI front end for both **John the Ripper** and
-  **hashcat**: wordlist / mask / bruteforce attacks, format & mode pickers,
-  live console, results table.
-- **cURL builder** — build a request with buttons/toggles (method, `-L`,
+  decode, MD5/SHA1/SHA256 — pick an operation, hit Convert.
+- **Packet Capture ("Wireshark-lite")** — a live packet list backed by
+  `tshark`, full protocol detail per packet, a BPF capture filter plus a
+  separate post-capture **display filter with a built-in cheat sheet**,
+  and **export to .pcap/.pcapng/.json/.csv**.
+- **Cracker** — a GUI front end for both **John the Ripper** and
+  **hashcat**: wordlist / mask / bruteforce attacks, format & mode
+  pickers, live console, an authoritative results table, and **Kali's
+  `rockyou.txt` auto-detected as the default wordlist** (auto-extracted
+  from `.gz` if needed, overridable in Settings or per-run).
+- **cURL Builder** — build a request with buttons/toggles (method, `-L`,
   `-k`, `-v`, headers, body, auth, cookies, proxy, timeout), see the
   equivalent command update live, run real `curl`, and optionally render
   the response as HTML in a sandboxed preview.
-- **Automatic crawler** — depth/pages/concurrency, scope control, and
-  toggleable techniques (forms, JS files, HTML comments, sitemap.xml,
-  robots.txt, common sensitive paths).
+- **Crawler** — depth/pages/concurrency, scope control, and toggleable
+  techniques (forms, JS files, HTML comments, sitemap.xml, robots.txt,
+  common sensitive paths).
+- **JWT** — decode, sign/reconstruct (none, HS/RS/ES-family, deliberately
+  independent of the header's own `alg` for alg-confusion testing), a
+  one-click alg:none stripper, verify, and a wordlist-based secret cracker
+  for HS256/384/512 tokens.
+- **Settings** — proxy (port/host/body-capture cap/insecure-upstream),
+  general preferences (history limit, drop confirmation, intercept alert,
+  default capture interface, default wordlist, live accent-color
+  theming, devtools-on-launch), highlight rules, CA management (export,
+  regenerate), and a purge-everything danger zone.
 
 Everything Wraith writes to disk — settings, traffic history, the
 generated CA — lives under one centralized per-user data folder (the OS's
 standard app-data directory), so install/uninstall never leaves junk
 scattered around.
+
+**Full parameter-by-parameter manual, with examples:** see the
+[Docs section of the website](https://d1se0.github.io/wraith/#/docs) (also
+buildable/runnable locally — see [The website](#the-website) below).
 
 ## Repository layout
 
@@ -139,6 +163,16 @@ UI, after the repo exists:
 
 No other configuration needed — Vite's `base: "./"` in
 `website/vite.config.mts` makes the build work correctly at that subpath.
+
+### Keeping the docs in sync
+
+The full manual lives at `website/src/docs/content.ts` — a plain data
+array (`DOCS_SECTIONS`), one entry per sidebar tool, each with typed
+content blocks (paragraphs, parameter tables, examples, notes). When you
+change a tool's behavior or add a parameter, update that tool's section
+there and, if the change is significant, the "What's inside" list above.
+`website/src/docs/DocsPage.tsx` is pure rendering and shouldn't need
+touching for a content-only change.
 
 ## Security notes
 

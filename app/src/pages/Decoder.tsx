@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CodecOp } from "../../electron/types";
 import { copyToClipboard } from "../lib/format";
-import { IconCopy } from "../lib/icons";
+import { IconCopy, IconPlay } from "../lib/icons";
 
 const OPS: { group: string; ops: { op: CodecOp; label: string }[] }[] = [
   {
@@ -57,15 +57,22 @@ const OPS: { group: string; ops: { op: CodecOp; label: string }[] }[] = [
   },
 ];
 
+const OP_LABELS: Record<CodecOp, string> = OPS.reduce((acc, g) => {
+  for (const o of g.ops) acc[o.op] = `${g.group} → ${o.label}`;
+  return acc;
+}, {} as Record<CodecOp, string>);
+
 export function Decoder() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [lastOp, setLastOp] = useState<CodecOp | null>(null);
+  const [selectedOp, setSelectedOp] = useState<CodecOp | null>(null);
 
-  const run = async (op: CodecOp) => {
-    setLastOp(op);
-    const res = await window.wraith.codec.run({ op, input });
+  const convert = async () => {
+    if (!selectedOp) return;
+    setLastOp(selectedOp);
+    const res = await window.wraith.codec.run({ op: selectedOp, input });
     if (res.error) {
       setError(res.error);
       setOutput("");
@@ -85,33 +92,7 @@ export function Decoder() {
     <div className="stack">
       <div>
         <h1 className="page-title">Decoder</h1>
-        <p className="page-sub">Encode, decode and hash — Base64, URL, hex, HTML entities, Unicode, gzip, JWT, MD5/SHA1/SHA256.</p>
-      </div>
-
-      <div className="split">
-        <div className="panel stack">
-          <div className="row between">
-            <div className="panel-title">Input</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(input)}>
-              <IconCopy size={12} /> Copy
-            </button>
-          </div>
-          <textarea rows={12} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Paste text, a token, base64, hex…" />
-        </div>
-        <div className="panel stack">
-          <div className="row between">
-            <div className="panel-title">Output {lastOp && <span className="muted">({lastOp})</span>}</div>
-            <div className="row" style={{ gap: 6 }}>
-              <button className="btn btn-ghost btn-sm" onClick={swap}>
-                Swap ⇄
-              </button>
-              <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(output)}>
-                <IconCopy size={12} /> Copy
-              </button>
-            </div>
-          </div>
-          {error ? <div className="badge badge-5xx">{error}</div> : <textarea rows={12} readOnly value={output} />}
-        </div>
+        <p className="page-sub">Pick an operation below, then hit Convert — Base64, URL, hex, HTML entities, Unicode, gzip, JWT, MD5/SHA1/SHA256.</p>
       </div>
 
       <div className="panel">
@@ -122,12 +103,61 @@ export function Decoder() {
                 {group.group}
               </span>
               {group.ops.map((o) => (
-                <button key={o.op} className="chip" onClick={() => run(o.op)}>
+                <button key={o.op} className={`chip ${selectedOp === o.op ? "active" : ""}`} onClick={() => setSelectedOp(o.op)}>
                   {o.label}
                 </button>
               ))}
             </div>
           ))}
+        </div>
+        <hr className="divider" />
+        <div className="row between" style={{ gap: 12 }}>
+          <span className="muted">
+            {selectedOp ? (
+              <>
+                Ready to run: <b style={{ color: "var(--text)" }}>{OP_LABELS[selectedOp]}</b>
+              </>
+            ) : (
+              "Select an operation above"
+            )}
+          </span>
+          <button className="btn btn-primary" onClick={convert} disabled={!selectedOp}>
+            <IconPlay size={13} /> Convert →
+          </button>
+        </div>
+      </div>
+
+      <div className="split">
+        <div className="panel stack">
+          <div className="row between">
+            <div className="panel-title">Input</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(input)}>
+              <IconCopy size={12} /> Copy
+            </button>
+          </div>
+          <textarea
+            rows={12}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") convert();
+            }}
+            placeholder="Paste text, a token, base64, hex… (Ctrl/Cmd+Enter to convert)"
+          />
+        </div>
+        <div className="panel stack">
+          <div className="row between">
+            <div className="panel-title">Output {lastOp && <span className="muted">({OP_LABELS[lastOp]})</span>}</div>
+            <div className="row" style={{ gap: 6 }}>
+              <button className="btn btn-ghost btn-sm" onClick={swap}>
+                Swap ⇄
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => copyToClipboard(output)}>
+                <IconCopy size={12} /> Copy
+              </button>
+            </div>
+          </div>
+          {error ? <div className="badge badge-5xx">{error}</div> : <textarea rows={12} readOnly value={output} />}
         </div>
       </div>
     </div>

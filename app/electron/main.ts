@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, screen } from "electron";
 import * as path from "path";
 import { registerIpcHandlers } from "./ipc";
-import { initHistory, wraithRoot } from "./store";
+import { initHistory, wraithRoot, loadSettings } from "./store";
 
 const isDev = process.env.WRAITH_DEV === "1";
 
@@ -54,6 +54,9 @@ function createWindow() {
     win.webContents.openDevTools({ mode: "detach" });
   } else {
     win.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    if (loadSettings().general.openDevToolsOnStart) {
+      win.webContents.openDevTools({ mode: "detach" });
+    }
   }
 
   win.on("maximize", () => win.webContents.send("window:maximized", true));
