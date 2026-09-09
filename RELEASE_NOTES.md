@@ -1,40 +1,47 @@
-## Wraith v0.1.0 — first public build
+## Wraith v0.2.0
 
-Wraith is a dark, opinionated, all-in-one offensive web toolkit — the
-"anti-Burp": an intercepting proxy, packet capture, hash cracking, a
-button-driven cURL builder and an automatic crawler in one fast desktop
-app, without the fifteen-year-old Java Swing feel.
+A big feature/fix batch on top of the first build: a real bug in
+"Send to Repeater" is fixed, Intercept no longer loses a held request
+when you switch tabs, and there's a full new JWT attack tool.
 
-This is the first published build. The core (proxy engine, cracker, curl
-runner, capture, crawler) has been tested end-to-end on Linux against
-real HTTP/HTTPS traffic, a real `.deb` install/uninstall cycle, real
-`john`/`hashcat`/`tshark` runs. **Windows and macOS builds compile and
-package correctly but have not been run on real Windows/macOS hardware
-yet** — this release is the first real test of those.
+### New
 
-### What's in
+- **JWT tool** — decode, sign/reconstruct (independent of the header's
+  own `alg`, for alg-confusion testing), a one-click "strip signature
+  (alg:none attack)" shortcut, verify against a secret/public key, and
+  a wordlist-based HS256/384/512 secret cracker with live progress.
+- **Packet Capture**: a post-capture display filter (separate from the
+  BPF capture filter) with a built-in cheat sheet of common examples,
+  and export to `.pcap` / `.pcapng` / `.json` / `.csv`.
+- **History**: export the current view to CSV or JSON.
+- **Cracker**: Kali's `rockyou.txt` is now auto-detected (and
+  auto-extracted if only the `.gz` is present) as the default wordlist.
+- **Settings**, significantly expanded: history limit, confirm-before-drop,
+  the Intercept alert toggle, a default capture interface, a default
+  wordlist override, live accent-color theming, devtools-on-launch, and
+  a Certificate Authority section (export, open folder, **regenerate**).
+- **Intercept**: a red flash on the sidebar and the held-item card when
+  something new is captured (toggleable in Settings), and a
+  "Send to Repeater" button right on a held item.
+- **Decoder**: redesigned around picking an operation, then hitting a
+  clear "Convert →" button, instead of every button firing immediately.
 
-- **Intercepting HTTP(S) proxy** with an on-the-fly MITM root CA — hold,
-  edit, forward or drop requests *and* responses, full traffic history
-  with user-toggleable highlight rules (JSON, GraphQL, auth/cookies,
-  4xx/5xx, …), a multi-tab **Repeater**, and a first-run **Setup** screen
-  that shows your machine's IP, the proxy port, step-by-step
-  FoxyProxy/browser configuration, and CA trust instructions per OS.
-- **Decoder** — Base64, URL, hex, HTML entities, unicode escapes, gzip,
-  JWT decode, MD5/SHA1/SHA256.
-- **Packet capture** ("Wireshark-lite") backed by `tshark` — live packet
-  list, click for full protocol detail, BPF filter support.
-- **Hash cracking** — a real GUI over both **John the Ripper** and
-  **hashcat**: wordlist/mask/bruteforce, format/mode pickers, live
-  console, an authoritative cracked-results table.
-- **cURL builder** — every flag is a button, live command preview, runs
-  real `curl`, optional sandboxed HTML render of the response.
-- **Automatic crawler** — depth/pages/concurrency/scope control, and
-  toggleable discovery techniques (forms, JS files, HTML comments,
-  sitemap.xml, robots.txt, common sensitive paths).
+### Fixed
 
-Everything Wraith writes lives under one centralized per-user data
-folder — install and uninstall never leave junk behind.
+- **"Send to Repeater" did nothing** — a React state-update ordering bug
+  in the app's shared context meant the pending request was always
+  discarded before Repeater could read it.
+- **A request held in Intercept could vanish from the UI** if you
+  switched to another tab while the proxy still had it paused in the
+  background — the queue now lives in shared app state instead of the
+  Intercept page's own local state, so it survives navigation.
+- **hashcat's "enable rules" always failed** on a stock install — it
+  pointed at a rules file (`best64.rule`) that Kali's hashcat package
+  doesn't ship. It's now a real file picker instead of a hardcoded path.
+- Closed a class of race condition in the JWT cracker, Cracker, Packet
+  Capture and Crawler pages where a very fast job could have its first
+  result event silently dropped before the UI finished subscribing to
+  it.
 
 ### Known limitations
 
@@ -42,16 +49,17 @@ folder — install and uninstall never leave junk behind.
   interceptable/editable like HTTP(S) exchanges.
 - The optional chained upstream proxy setting in Settings is not yet
   wired into the forwarding path.
-- Windows/macOS: packaged and tested to install/launch under emulation
-  (Wine), but not yet confirmed on real hardware — please report issues.
+- Windows and macOS installers build successfully on GitHub's native
+  Windows/macOS runners, but their end-to-end runtime behavior hasn't
+  been confirmed on real hardware yet — please report issues.
 
 ### Installing
 
-- **Windows**: download `Wraith-Setup-0.1.0.exe`, run it.
-- **Linux**: `sudo apt install ./Wraith-0.1.0-linux-amd64.deb` (or
+- **Windows**: download `Wraith-Setup-0.2.0.exe`, run it.
+- **Linux**: `sudo apt install ./Wraith-0.2.0-linux-amd64.deb` (or
   double-click it in a GUI package manager).
 - **macOS**: open the `.dmg`, drag Wraith to Applications. It's
   unsigned, so the first launch needs right-click → Open to get past
   Gatekeeper.
 
-Full details: [README](https://github.com/D1se0/wraith#readme).
+Full manual: [docs](https://d1se0.github.io/wraith/#/docs) · [README](https://github.com/D1se0/wraith#readme).
