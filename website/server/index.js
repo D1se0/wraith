@@ -5,13 +5,12 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // -----------------------------------------------------------------------
-// The Wraith project doesn't have a public GitHub repo yet -- this is the
-// ONE place that slug lives on the server side. Set the GITHUB_REPO env
-// var (or edit the default below) once the project is pushed to GitHub.
-// The frontend's src/config.ts has a matching placeholder used only to
-// render a "View on GitHub" link before the API below has responded.
+// The ONE place this slug lives on the server side. Override with the
+// GITHUB_REPO env var if you ever fork/rename. The frontend's
+// src/config.ts has a matching constant used only to render a "View on
+// GitHub" link before the API below has responded.
 // -----------------------------------------------------------------------
-const GITHUB_REPO = process.env.GITHUB_REPO || "YOUR_GITHUB_USERNAME/wraith";
+const GITHUB_REPO = process.env.GITHUB_REPO || "D1se0/wraith";
 const PORT = process.env.PORT || 4173;
 
 const app = express();

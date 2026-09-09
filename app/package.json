@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Wraith — an intuitive, automatic, all-in-one offensive web toolkit (intercepting proxy, packet capture, hash cracking, cURL builder, crawler and more).",
   "author": "Wraith Project <noreply@wraith.local>",
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/wraith",
+  "homepage": "https://github.com/D1se0/wraith",
   "license": "MIT",
   "private": true,
   "main": "dist-electron/main.js",

@@ -106,10 +106,16 @@ git push origin v1.0.0
 
 `website/` is a separate Node.js + Express + React (Vite) site: what Wraith
 is, per-OS install instructions, and a download button that reads the
-**latest GitHub Release** via the GitHub API. See `website/README.md` for
-how to run it. Before you publish, update the placeholder GitHub repo slug
-(search for `YOUR_GITHUB_USERNAME` / `GITHUB_REPO`) to your real repo once
-you've pushed this project.
+**latest GitHub Release** via the GitHub API (repo: `D1se0/wraith`, set in
+one place — `website/server/index.js`'s `GITHUB_REPO` constant, override
+with the `GITHUB_REPO` env var if you ever fork/rename).
+
+```bash
+cd website
+npm install
+npm run build
+npm start        # -> http://localhost:4173
+```
 
 ## Security notes
 
