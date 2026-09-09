@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.DS_Store
+Thumbs.db
+
+# local Wraith runtime data if ever run from a dev checkout with a portable profile
+.http-mitm-proxy/
+*.pcapng
+*.pcap
+
+# editor
+.vscode/
+.idea/

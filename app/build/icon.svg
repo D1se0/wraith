@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#11151f"/>
+      <stop offset="100%" stop-color="#080a10"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#37e6c4"/>
+      <stop offset="100%" stop-color="#7c5cff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="38%" r="60%">
+      <stop offset="0%" stop-color="#37e6c4" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#37e6c4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <rect x="28" y="28" width="968" height="968" rx="196" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="4"/>
+  <circle cx="512" cy="400" r="360" fill="url(#glow)"/>
+
+  <!-- Wraith glyph: hooded silhouette with a wavy hem, built from smooth curves -->
+  <path d="
+    M 512 210
+    C 610 210 690 292 700 392
+    L 712 560
+    C 730 610 742 660 742 706
+    C 742 706 706 672 676 706
+    C 646 740 610 706 580 740
+    C 550 774 514 740 484 774
+    C 454 740 418 774 388 740
+    C 358 706 322 740 292 706
+    C 262 672 226 706 226 706
+    C 226 660 238 610 256 560
+    L 268 392
+    C 278 292 358 210 456 210
+    Z"
+    fill="url(#accent)"/>
+
+  <!-- eyes -->
+  <ellipse cx="452" cy="430" rx="26" ry="34" fill="#0a0d14"/>
+  <ellipse cx="588" cy="430" rx="26" ry="34" fill="#0a0d14"/>
+
+  <!-- subtle scanline / network accent under the glyph -->
+  <path d="M 300 590 L 460 590 L 500 630 L 720 630" stroke="#0a0d14" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.35"/>
+</svg>

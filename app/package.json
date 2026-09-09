@@ -1,0 +1,82 @@
+{
+  "name": "wraith",
+  "productName": "Wraith",
+  "version": "1.0.0",
+  "description": "Wraith — an intuitive, automatic, all-in-one offensive web toolkit (intercepting proxy, packet capture, hash cracking, cURL builder, crawler and more).",
+  "author": "Wraith Project <noreply@wraith.local>",
+  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/wraith",
+  "license": "MIT",
+  "private": true,
+  "main": "dist-electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "concurrently -k -n VITE,ELECTRON -c cyan,magenta \"vite\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && tsc -p tsconfig.electron.json && cross-env WRAITH_DEV=1 electron .",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build": "npm run build:renderer && npm run build:electron",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "dist:linux": "npm run build && electron-builder --linux deb",
+    "dist:win": "npm run build && electron-builder --win nsis",
+    "dist:mac": "npm run build && electron-builder --mac dmg",
+    "dist:all": "npm run build && electron-builder -mwl"
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "cheerio": "^1.2.0",
+    "http-mitm-proxy": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^34.5.8",
+    "electron-builder": "^26.15.3",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.7.3",
+    "vite": "^8.0.7",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "dev.wraith.toolkit",
+    "productName": "Wraith",
+    "artifactName": "Wraith-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "../release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [],
+    "icon": "build/icon.png",
+    "linux": {
+      "target": [{ "target": "deb", "arch": ["x64"] }],
+      "category": "Network",
+      "maintainer": "Wraith Project <noreply@wraith.local>",
+      "synopsis": "Intuitive offensive web security toolkit"
+    },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": true,
+      "artifactName": "Wraith-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.developer-tools"
+    }
+  }
+}
