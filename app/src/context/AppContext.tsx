@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
-import { ProxyStatus, InterceptPending, InterceptResolution } from "../../electron/types";
+import { ProxyStatus, InterceptPending, InterceptResolution, CapturedResponse } from "../../electron/types";
 import { base64ToUtf8, utf8ToBase64 } from "../lib/base64";
+import { EditableRequest } from "../components/RequestEditor";
 
 export type Page = "welcome" | "proxy" | "history" | "repeater" | "decoder" | "capture" | "cracker" | "curl" | "crawler" | "jwt" | "settings";
 
@@ -42,14 +43,55 @@ interface ToastItem {
   kind: "info" | "error";
 }
 
+// --------------------------------------------------------------- Repeater
+
+export interface RepeaterTab {
+  id: number;
+  label: string;
+  groupId: string | null;
+  request: EditableRequest;
+  response: CapturedResponse | null;
+  loading: boolean;
+  insecure: boolean;
+}
+
+export interface RepeaterGroup {
+  id: string;
+  name: string;
+  color: string;
+}
+
+const GROUP_COLORS = ["#37e6c4", "#7c5cff", "#ff8a3d", "#ff5c8a", "#4fb0ff", "#c792ff", "#ffd166"];
+
+let nextRepeaterTabId = 1;
+
+function blankRepeaterTab(groupId: string | null = null): RepeaterTab {
+  return {
+    id: nextRepeaterTabId++,
+    label: `Request ${nextRepeaterTabId - 1}`,
+    groupId,
+    request: { method: "GET", url: "https://", headers: [{ key: "User-Agent", value: "Wraith/1.0" }], bodyText: "" },
+    response: null,
+    loading: false,
+    insecure: true,
+  };
+}
+
+function safeHostname(u: string): string {
+  try {
+    return new URL(u).hostname || "Request";
+  } catch {
+    return "Request";
+  }
+}
+
 interface AppContextValue {
   page: Page;
   setPage: (p: Page) => void;
   proxyStatus: ProxyStatus;
   refreshProxyStatus: () => void;
-  pendingRepeaterRequest: PendingRepeaterRequest | null;
+  /** Creates a brand new Repeater tab pre-filled with this request and switches to the Repeater page. Safe to call repeatedly in quick succession -- each call gets its own tab, nothing is ever overwritten. */
   sendToRepeater: (req: PendingRepeaterRequest) => void;
-  consumePendingRepeaterRequest: () => PendingRepeaterRequest | null;
   toast: (message: string, kind?: "info" | "error") => void;
 
   // Intercept queue lives here (not inside the Intercept page component) so
@@ -63,6 +105,27 @@ interface AppContextValue {
   forwardAllIntercepts: () => Promise<number>;
   /** bumps every time a new item is held -- watch it to trigger a brief flash/animation */
   interceptArrivalTick: number;
+
+  // Repeater tabs/groups: same reasoning as Intercept above -- this used to
+  // live inside Repeater.tsx's own component state, which reset to a
+  // single blank tab every time the page unmounted (i.e. every time you
+  // navigated away and back), silently discarding every other tab. Sending
+  // two different requests to Repeater back-to-back looked like the second
+  // one "overwrote" the first because of exactly this.
+  repeaterTabs: RepeaterTab[];
+  repeaterGroups: RepeaterGroup[];
+  activeRepeaterTabId: number | null;
+  setActiveRepeaterTabId: (id: number) => void;
+  addRepeaterTab: (groupId?: string | null) => number;
+  closeRepeaterTab: (id: number) => void;
+  renameRepeaterTab: (id: number, label: string) => void;
+  patchRepeaterTab: (id: number, patch: Partial<Pick<RepeaterTab, "request" | "insecure">>) => void;
+  sendRepeaterTab: (id: number) => Promise<void>;
+  createRepeaterGroup: (name: string) => string;
+  renameRepeaterGroup: (id: string, name: string) => void;
+  deleteRepeaterGroup: (id: string) => void;
+  setRepeaterTabGroup: (tabId: number, groupId: string | null) => void;
+  sendRepeaterGroup: (groupId: string, mode: "parallel" | "sequential") => Promise<void>;
 }
 
 const AppCtx = createContext<AppContextValue | null>(null);
@@ -97,13 +160,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return (stored as Page) || "welcome";
   });
   const [proxyStatus, setProxyStatus] = useState<ProxyStatus>({ running: false, port: 8081, host: "0.0.0.0" });
-  const [pendingRepeaterRequest, setPendingRepeaterRequest] = useState<PendingRepeaterRequest | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const toastId = useRef(0);
 
   const [interceptQueue, setInterceptQueue] = useState<InterceptPending[]>([]);
   const [interceptEdits, setInterceptEdits] = useState<Record<string, EditableHeld>>({});
   const [interceptArrivalTick, setInterceptArrivalTick] = useState(0);
+
+  const [repeaterTabs, setRepeaterTabs] = useState<RepeaterTab[]>(() => [blankRepeaterTab()]);
+  const [repeaterGroups, setRepeaterGroups] = useState<RepeaterGroup[]>([]);
+  const [activeRepeaterTabId, setActiveRepeaterTabId] = useState<number | null>(() => repeaterTabs[0]?.id ?? null);
+  // sendRepeaterTab needs the latest tabs without being recreated (and
+  // re-triggering effects) on every keystroke a user makes editing a
+  // request, so it reads through a ref kept in sync via the effect below
+  // instead of closing over `repeaterTabs` directly.
+  const repeaterTabsRef = useRef(repeaterTabs);
+  useEffect(() => {
+    repeaterTabsRef.current = repeaterTabs;
+  }, [repeaterTabs]);
 
   const setPage = useCallback((p: Page) => {
     setPageState(p);
@@ -178,30 +252,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return n;
   }, []);
 
-  const sendToRepeater = useCallback(
-    (req: PendingRepeaterRequest) => {
-      setPendingRepeaterRequest(req);
-      setPage("repeater");
-    },
-    [setPage]
-  );
-
-  // NOTE: this must NOT try to read the state via the setState updater's
-  // argument and return it synchronously -- React does not guarantee (and
-  // in React 18's batched updates, does not) invoke that updater within
-  // the same call stack, so `value` would always still be null when
-  // returned. Read the already-current `pendingRepeaterRequest` closure
-  // value directly instead; only the clearing needs to go through setState.
-  const consumePendingRepeaterRequest = useCallback(() => {
-    setPendingRepeaterRequest(null);
-    return pendingRepeaterRequest;
-  }, [pendingRepeaterRequest]);
-
   const toast = useCallback((message: string, kind: "info" | "error" = "info") => {
     const id = ++toastId.current;
     setToasts((t) => [...t, { id, message, kind }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4200);
   }, []);
+
+  // ------------------------------------------------------------- Repeater
+
+  const addRepeaterTab = useCallback((groupId: string | null = null) => {
+    const tab = blankRepeaterTab(groupId);
+    setRepeaterTabs((cur) => [...cur, tab]);
+    setActiveRepeaterTabId(tab.id);
+    return tab.id;
+  }, []);
+
+  const closeRepeaterTab = useCallback((id: number) => {
+    setRepeaterTabs((cur) => {
+      const next = cur.filter((t) => t.id !== id);
+      const finalTabs = next.length === 0 ? [blankRepeaterTab()] : next;
+      setActiveRepeaterTabId((activeId) => (activeId === id ? finalTabs[0].id : activeId));
+      return finalTabs;
+    });
+  }, []);
+
+  const renameRepeaterTab = useCallback((id: number, label: string) => {
+    setRepeaterTabs((cur) => cur.map((t) => (t.id === id ? { ...t, label: label.trim() || t.label } : t)));
+  }, []);
+
+  const patchRepeaterTab = useCallback((id: number, patch: Partial<Pick<RepeaterTab, "request" | "insecure">>) => {
+    setRepeaterTabs((cur) => cur.map((t) => (t.id === id ? { ...t, ...patch } : t)));
+  }, []);
+
+  const sendRepeaterTab = useCallback(async (id: number) => {
+    const tab = repeaterTabsRef.current.find((t) => t.id === id);
+    if (!tab) return;
+    setRepeaterTabs((cur) => cur.map((t) => (t.id === id ? { ...t, loading: true, response: null } : t)));
+    try {
+      const exchange = await window.wraith.repeater.send({
+        method: tab.request.method,
+        url: tab.request.url,
+        headers: tab.request.headers,
+        bodyBase64: utf8ToBase64(tab.request.bodyText),
+        insecure: tab.insecure,
+      });
+      setRepeaterTabs((cur) => cur.map((t) => (t.id === id ? { ...t, loading: false, response: exchange.response } : t)));
+    } catch (err: any) {
+      setRepeaterTabs((cur) =>
+        cur.map((t) =>
+          t.id === id
+            ? {
+                ...t,
+                loading: false,
+                response: {
+                  statusCode: 0,
+                  statusMessage: String(err?.message || err),
+                  headers: {},
+                  body: "",
+                  bodyTruncated: false,
+                  timeMs: 0,
+                },
+              }
+            : t
+        )
+      );
+    }
+  }, []);
+
+  const sendToRepeater = useCallback(
+    (req: PendingRepeaterRequest) => {
+      const tab = blankRepeaterTab(null);
+      tab.label = safeHostname(req.url);
+      tab.request = { method: req.method, url: req.url, headers: req.headers, bodyText: req.body };
+      setRepeaterTabs((cur) => [...cur, tab]);
+      setActiveRepeaterTabId(tab.id);
+      setPage("repeater");
+    },
+    [setPage]
+  );
+
+  const createRepeaterGroup = useCallback((name: string) => {
+    const id = `grp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    setRepeaterGroups((cur) => [...cur, { id, name: name.trim() || "Group", color: GROUP_COLORS[cur.length % GROUP_COLORS.length] }]);
+    return id;
+  }, []);
+
+  const renameRepeaterGroup = useCallback((id: string, name: string) => {
+    setRepeaterGroups((cur) => cur.map((g) => (g.id === id ? { ...g, name: name.trim() || g.name } : g)));
+  }, []);
+
+  const deleteRepeaterGroup = useCallback((id: string) => {
+    setRepeaterGroups((cur) => cur.filter((g) => g.id !== id));
+    setRepeaterTabs((cur) => cur.map((t) => (t.groupId === id ? { ...t, groupId: null } : t)));
+  }, []);
+
+  const setRepeaterTabGroup = useCallback((tabId: number, groupId: string | null) => {
+    setRepeaterTabs((cur) => cur.map((t) => (t.id === tabId ? { ...t, groupId } : t)));
+  }, []);
+
+  const sendRepeaterGroup = useCallback(
+    async (groupId: string, mode: "parallel" | "sequential") => {
+      const ids = repeaterTabsRef.current.filter((t) => t.groupId === groupId).map((t) => t.id);
+      if (mode === "parallel") {
+        await Promise.all(ids.map((id) => sendRepeaterTab(id)));
+      } else {
+        for (const id of ids) await sendRepeaterTab(id);
+      }
+    },
+    [sendRepeaterTab]
+  );
 
   return (
     <AppCtx.Provider
@@ -210,9 +369,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPage,
         proxyStatus,
         refreshProxyStatus,
-        pendingRepeaterRequest,
         sendToRepeater,
-        consumePendingRepeaterRequest,
         toast,
         interceptQueue,
         interceptEdits,
@@ -220,6 +377,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         resolveIntercept,
         forwardAllIntercepts,
         interceptArrivalTick,
+        repeaterTabs,
+        repeaterGroups,
+        activeRepeaterTabId,
+        setActiveRepeaterTabId,
+        addRepeaterTab,
+        closeRepeaterTab,
+        renameRepeaterTab,
+        patchRepeaterTab,
+        sendRepeaterTab,
+        createRepeaterGroup,
+        renameRepeaterGroup,
+        deleteRepeaterGroup,
+        setRepeaterTabGroup,
+        sendRepeaterGroup,
       }}
     >
       {children}

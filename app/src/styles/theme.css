@@ -167,6 +167,15 @@ p.page-sub { color: var(--text-dim); margin: 0 0 20px; font-size: 13px; }
 }
 .chip:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
 .chip.active { background: var(--accent-grad); color: #041014; border-color: transparent; font-weight: 700; }
+.chip-spinner {
+  width: 8px; height: 8px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent; opacity: 0.6;
+  animation: spin 700ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.repeater-group { border-left: 3px solid var(--accent-a); padding: 12px 16px; }
+.group-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; display: inline-block; }
 
 /* --------------------------------------------------------------- fields */
 .field { display: flex; flex-direction: column; gap: 5px; }

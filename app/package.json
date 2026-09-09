@@ -54,7 +54,9 @@
       "dist/**/*",
       "package.json"
     ],
-    "extraResources": [],
+    "extraResources": [
+      { "from": "resources/wordlists", "to": "wordlists" }
+    ],
     "icon": "build/icon.png",
     "linux": {
       "target": [{ "target": "deb", "arch": ["x64"] }],

@@ -16,10 +16,31 @@ const ROCKYOU_CANDIDATES = [
 ];
 
 /**
- * Looks for Kali's bundled rockyou.txt so the Cracker tab can default to
- * it instead of forcing every user to go find a wordlist first. Handles
- * both the plain file and the gzipped form some distros/packages ship
- * (`apt install wordlists` on Debian leaves it as rockyou.txt.gz).
+ * Wraith ships its own gzip-compressed copy of rockyou.txt (see
+ * app/resources/wordlists and the `extraResources` entry in
+ * package.json's electron-builder config) so the Cracker/JWT tabs have a
+ * usable default wordlist out of the box on platforms that don't already
+ * have one lying around -- Windows and macOS have no equivalent of
+ * Kali's /usr/share/wordlists, and even other Linux distros may not.
+ * Checked two ways since dev runs (`npm run dev`, or `electron .`
+ * straight out of app/) never go through electron-builder's
+ * extraResources copy step the way a packaged app does.
+ */
+function bundledWordlistGzPath(): string | null {
+  const candidates = [
+    path.join(process.resourcesPath || "", "wordlists", "rockyou.txt.gz"),
+    path.join(__dirname, "..", "..", "resources", "wordlists", "rockyou.txt.gz"),
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
+/**
+ * Looks for a usable rockyou.txt so the Cracker tab can default to it
+ * instead of forcing every user to go find a wordlist first: an already
+ * Wraith-extracted copy, then the OS's own copy if there is one (handles
+ * both the plain file and the gzipped form some distros/packages ship --
+ * `apt install wordlists` on Debian leaves it as rockyou.txt.gz), and
+ * finally the copy bundled inside Wraith itself.
  */
 export function findDefaultWordlist(): DefaultWordlistInfo {
   const extractedPath = path.join(wraithRoot(), "wordlists", "rockyou.txt");
@@ -33,12 +54,15 @@ export function findDefaultWordlist(): DefaultWordlistInfo {
     }
     return { path: candidate, needsExtraction: false, sizeBytes: fs.statSync(candidate).size };
   }
+  if (bundledWordlistGzPath()) {
+    return { path: null, needsExtraction: true };
+  }
   return { path: null, needsExtraction: false };
 }
 
-/** Extracts whichever rockyou.txt.gz findDefaultWordlist() found into our own data folder (no root needed, unlike writing back into /usr/share). */
+/** Extracts whichever rockyou.txt.gz findDefaultWordlist() found (OS-provided or Wraith's own bundled copy) into our own data folder (no root needed, unlike writing back into /usr/share). */
 export async function extractDefaultWordlist(): Promise<DefaultWordlistInfo> {
-  const gzPath = ROCKYOU_CANDIDATES.find((c) => c.endsWith(".gz") && fs.existsSync(c));
+  const gzPath = ROCKYOU_CANDIDATES.find((c) => c.endsWith(".gz") && fs.existsSync(c)) || bundledWordlistGzPath();
   if (!gzPath) return findDefaultWordlist();
 
   const destDir = path.join(wraithRoot(), "wordlists");
