@@ -5,10 +5,13 @@ name: Build Wraith installers
 # isn't reliable, so we let GitHub's hosted runners do each one natively)
 # and attaches them to a GitHub Release whenever a version tag is pushed.
 #
-# Usage: bump "version" in app/package.json, then
-#   git tag v1.0.0 && git push origin v1.0.0
+# Usage: bump "version" in app/package.json AND update RELEASE_NOTES.md,
+# then:
+#   git tag v0.1.0 && git push origin v0.1.0
 # The website's "Download" buttons read this repo's latest Release via
 # the GitHub API, so publishing a release here is what makes them work.
+# The release body comes from RELEASE_NOTES.md, with GitHub's own
+# auto-generated "What's Changed" commit list appended after it.
 
 on:
   push:
@@ -62,6 +65,8 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -69,6 +74,8 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: Wraith ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
           files: artifacts/**/*
           draft: false
           generate_release_notes: true

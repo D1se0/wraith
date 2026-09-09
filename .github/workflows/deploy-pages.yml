@@ -1,0 +1,60 @@
+name: Deploy website to GitHub Pages
+
+# Builds website/ (Vite) as static files and publishes them to GitHub
+# Pages. Pages can't run the Node/Express server in website/server — that
+# one's for self-hosting instead — but the built dist/ is plain static
+# HTML/CSS/JS either way, so this covers the "just show me the site"
+# deployment with zero extra infrastructure.
+#
+# One-time setup required in the GitHub UI before this works:
+#   Settings -> Pages -> Build and deployment -> Source -> "GitHub Actions"
+# After that, every push to main that touches website/ redeploys it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

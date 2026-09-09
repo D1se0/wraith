@@ -87,9 +87,13 @@ their native OS runners and attaches them to a GitHub Release whenever you
 push a version tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v0.1.0
+git push origin v0.1.0
 ```
+
+The release body is pulled from [RELEASE_NOTES.md](RELEASE_NOTES.md) —
+update that file (and the version in `app/package.json`) before tagging
+each new release.
 
 ### Install / uninstall
 
@@ -106,9 +110,13 @@ git push origin v1.0.0
 
 `website/` is a separate Node.js + Express + React (Vite) site: what Wraith
 is, per-OS install instructions, and a download button that reads the
-**latest GitHub Release** via the GitHub API (repo: `D1se0/wraith`, set in
-one place — `website/server/index.js`'s `GITHUB_REPO` constant, override
-with the `GITHUB_REPO` env var if you ever fork/rename).
+**latest GitHub Release** straight from the GitHub API on the client (repo
+slug lives in one place, `website/src/config.ts`'s `GITHUB_REPO_FALLBACK`).
+Because that call happens in the browser, the exact same build works both
+self-hosted via Node and as static files with no backend at all — which is
+what makes GitHub Pages deployment below possible.
+
+Self-hosted with Node:
 
 ```bash
 cd website
@@ -116,6 +124,21 @@ npm install
 npm run build
 npm start        # -> http://localhost:4173
 ```
+
+### Deploying to GitHub Pages
+
+`.github/workflows/deploy-pages.yml` builds `website/` and publishes it to
+GitHub Pages automatically on every push to `main` that touches `website/`
+(or via "Run workflow" in the Actions tab). One-time setup, in the GitHub
+UI, after the repo exists:
+
+1. **Settings → Pages → Build and deployment → Source → "GitHub Actions"**
+   (not "Deploy from a branch" — that's a different, older mechanism).
+2. Push to `main` (or run the workflow manually) — it'll appear at
+   `https://d1se0.github.io/wraith/`.
+
+No other configuration needed — Vite's `base: "./"` in
+`website/vite.config.mts` makes the build work correctly at that subpath.
 
 ## Security notes
 
