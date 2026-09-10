@@ -27,7 +27,7 @@ export function TagPills({ tags, rules }: { tags: ExchangeTag[]; rules: Highligh
             style={
               color
                 ? { background: `${color}22`, color, borderColor: `${color}55` }
-                : { background: "rgba(255,255,255,0.06)", color: "var(--text-dim)" }
+                : { background: "rgba(var(--overlay-rgb),0.06)", color: "var(--text-dim)" }
             }
           >
             {t}

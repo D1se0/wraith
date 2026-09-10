@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { JwtAlgorithm, JwtDecodeResult, DefaultWordlistInfo } from "../../electron/types";
 import { copyToClipboard } from "../lib/format";
 import { IconCopy, IconPlay, IconStop, IconCheck, IconX, IconWarning } from "../lib/icons";
+import { AskClaudeButton } from "../components/AskClaude";
 
 const ALGORITHMS: JwtAlgorithm[] = ["none", "HS256", "HS384", "HS512", "RS256", "RS384", "RS512", "ES256", "ES384", "ES512"];
 
@@ -224,6 +225,12 @@ export function JwtTool() {
                   {decoded.signatureB64Url || "(none)"}
                 </code>
               </div>
+            )}
+            {decoded.wellFormed && (
+              <AskClaudeButton
+                context={() => `JWT header: ${pretty(decoded.header)}\n\nJWT payload: ${pretty(decoded.payload)}`}
+                question="Anything notable or attackable about this JWT (weak alg, sensitive claims, missing exp, alg confusion risk, etc.)?"
+              />
             )}
           </>
         )}

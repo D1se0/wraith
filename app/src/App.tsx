@@ -11,7 +11,17 @@ import { Cracker } from "./pages/Cracker";
 import { CurlBuilder } from "./pages/CurlBuilder";
 import { Crawler } from "./pages/Crawler";
 import { JwtTool } from "./pages/JwtTool";
+import { Ai } from "./pages/Ai";
+import { Findings } from "./pages/Findings";
+import { Comparer } from "./pages/Comparer";
+import { Identities } from "./pages/Identities";
+import { Fuzzer } from "./pages/Fuzzer";
+import { Race } from "./pages/Race";
+import { Chain } from "./pages/Chain";
+import { Oob } from "./pages/Oob";
 import { Settings } from "./pages/Settings";
+import { CommandPalette } from "./components/CommandPalette";
+import { OnboardingTour } from "./components/OnboardingTour";
 
 function Shell() {
   const { page } = useApp();
@@ -34,8 +44,18 @@ function Shell() {
           {page === "curl" && <CurlBuilder />}
           {page === "crawler" && <Crawler />}
           {page === "jwt" && <JwtTool />}
+          {page === "comparer" && <Comparer />}
+          {page === "identities" && <Identities />}
+          {page === "fuzzer" && <Fuzzer />}
+          {page === "race" && <Race />}
+          {page === "chain" && <Chain />}
+          {page === "oob" && <Oob />}
+          {page === "ai" && <Ai />}
+          {page === "findings" && <Findings />}
         </div>
       </div>
+      <CommandPalette />
+      <OnboardingTour />
     </div>
   );
 }

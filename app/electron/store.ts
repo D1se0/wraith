@@ -47,6 +47,7 @@ export function defaultSettings(): WraithSettings {
       interceptScope: [],
       allowInsecureUpstream: true,
       maxBodyCaptureBytes: 5 * 1024 * 1024,
+      matchReplaceRules: [],
     },
     highlightRules: DEFAULT_HIGHLIGHT_RULES,
     general: {
@@ -58,6 +59,10 @@ export function defaultSettings(): WraithSettings {
       accentFrom: "37e6c4",
       accentTo: "7c5cff",
       openDevToolsOnStart: false,
+    },
+    ai: {
+      apiKey: "",
+      model: "claude-sonnet-5",
     },
     theme: "wraith-dark",
     firstRunComplete: false,
@@ -77,6 +82,7 @@ export function loadSettings(): WraithSettings {
       ...parsed,
       proxy: { ...defaultSettings().proxy, ...parsed.proxy },
       general: { ...defaultSettings().general, ...parsed.general },
+      ai: { ...defaultSettings().ai, ...parsed.ai },
     };
   } catch {
     resolved = defaultSettings();
@@ -97,6 +103,7 @@ export function updateSettings(patch: Partial<WraithSettings>): WraithSettings {
     ...patch,
     proxy: { ...current.proxy, ...patch.proxy },
     general: { ...current.general, ...patch.general },
+    ai: { ...current.ai, ...patch.ai },
   };
   saveSettings(next);
   return next;

@@ -1,7 +1,68 @@
 import { useState } from "react";
 import { CodecOp } from "../../electron/types";
 import { copyToClipboard } from "../lib/format";
-import { IconCopy, IconPlay } from "../lib/icons";
+import { IconCopy, IconPlay, IconAi } from "../lib/icons";
+
+/**
+ * Best-effort "what is this" guess for the Magic Wand button -- cheap
+ * heuristics only, no false confidence: each check requires a fairly
+ * specific signal (charset, length, magic bytes) before it claims a match,
+ * and falls through to null rather than guessing wildly.
+ */
+function guessOp(raw: string): CodecOp | null {
+  const s = raw.trim();
+  if (!s) return null;
+
+  // JWT: three base64url segments, first one decodes to JSON with "alg"
+  const jwtParts = s.split(".");
+  if (jwtParts.length === 3 && jwtParts.every((p) => /^[A-Za-z0-9_-]+$/.test(p))) {
+    try {
+      const header = JSON.parse(atob(jwtParts[0].replace(/-/g, "+").replace(/_/g, "/")));
+      if (header && typeof header === "object" && "alg" in header) return "jwt-decode";
+    } catch {
+      /* not a JWT after all */
+    }
+  }
+
+  // gzip: base64 whose decoded bytes start with the gzip magic number 1f 8b
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(s) && s.length % 4 === 0) {
+    try {
+      const bin = atob(s);
+      if (bin.charCodeAt(0) === 0x1f && bin.charCodeAt(1) === 0x8b) return "gzip-decode";
+    } catch {
+      /* not valid base64 */
+    }
+  }
+
+  // URL-encoded: contains %XX escapes
+  if (/%[0-9a-fA-F]{2}/.test(s)) return "url-decode";
+
+  // HTML entities
+  if (/&(amp|lt|gt|quot|#39);/.test(s)) return "html-entities-decode";
+
+  // Hex: even-length, only hex chars/whitespace, and long enough that it's
+  // unlikely to just be a short number someone typed
+  const hexOnly = s.replace(/\s+/g, "");
+  if (/^[0-9a-fA-F]+$/.test(hexOnly) && hexOnly.length % 2 === 0 && hexOnly.length >= 8) {
+    // MD5/SHA1/SHA256 hex digests are common paste targets too, but there's
+    // no "decode" for a hash -- only offer hex-decode when it doesn't look
+    // like a bare digest length (32/40/64), where decoding would just
+    // produce binary noise nobody wants.
+    if (![32, 40, 64].includes(hexOnly.length)) return "hex-decode";
+  }
+
+  // Base64: valid charset/padding and not just a plain word
+  if (/^[A-Za-z0-9+/]{8,}={0,2}$/.test(s) && s.length % 4 === 0 && /[+/A-Z]/.test(s)) {
+    try {
+      atob(s);
+      return "base64-decode";
+    } catch {
+      /* not valid base64 */
+    }
+  }
+
+  return null;
+}
 
 const OPS: { group: string; ops: { op: CodecOp; label: string }[] }[] = [
   {
@@ -68,11 +129,11 @@ export function Decoder() {
   const [error, setError] = useState<string | null>(null);
   const [lastOp, setLastOp] = useState<CodecOp | null>(null);
   const [selectedOp, setSelectedOp] = useState<CodecOp | null>(null);
+  const [guessFailed, setGuessFailed] = useState(false);
 
-  const convert = async () => {
-    if (!selectedOp) return;
-    setLastOp(selectedOp);
-    const res = await window.wraith.codec.run({ op: selectedOp, input });
+  const runOp = async (op: CodecOp) => {
+    setLastOp(op);
+    const res = await window.wraith.codec.run({ op, input });
     if (res.error) {
       setError(res.error);
       setOutput("");
@@ -80,6 +141,22 @@ export function Decoder() {
       setError(null);
       setOutput(res.output);
     }
+  };
+
+  const convert = async () => {
+    if (!selectedOp) return;
+    await runOp(selectedOp);
+  };
+
+  const magic = async () => {
+    setGuessFailed(false);
+    const guess = guessOp(input);
+    if (!guess) {
+      setGuessFailed(true);
+      return;
+    }
+    setSelectedOp(guess);
+    await runOp(guess);
   };
 
   const swap = () => {
@@ -118,13 +195,19 @@ export function Decoder() {
                 Ready to run: <b style={{ color: "var(--text)" }}>{OP_LABELS[selectedOp]}</b>
               </>
             ) : (
-              "Select an operation above"
+              "Select an operation above, or let Magic guess it from the input"
             )}
           </span>
-          <button className="btn btn-primary" onClick={convert} disabled={!selectedOp}>
-            <IconPlay size={13} /> Convert →
-          </button>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn btn-sm" onClick={magic} disabled={!input.trim()} title="Guess the encoding from the input and convert it">
+              <IconAi size={13} /> Magic
+            </button>
+            <button className="btn btn-primary" onClick={convert} disabled={!selectedOp}>
+              <IconPlay size={13} /> Convert →
+            </button>
+          </div>
         </div>
+        {guessFailed && <div className="field-hint" style={{ marginTop: 8 }}>Couldn't confidently guess the encoding — pick one manually above.</div>}
       </div>
 
       <div className="split">

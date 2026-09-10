@@ -298,7 +298,7 @@ export function Capture() {
                   <td className="mono">{p.source}</td>
                   <td className="mono">{p.destination}</td>
                   <td>
-                    <span className="tag-pill" style={{ color: PROTO_COLOR[p.protocol] || "var(--text-dim)", background: "rgba(255,255,255,0.06)" }}>
+                    <span className="tag-pill" style={{ color: PROTO_COLOR[p.protocol] || "var(--text-dim)", background: "rgba(var(--overlay-rgb),0.06)" }}>
                       {p.protocol}
                     </span>
                   </td>

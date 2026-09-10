@@ -136,8 +136,12 @@ export const DOCS_SECTIONS: DocsSection[] = [
           { name: "Search box", description: "Filters by method, URL, status, or tag — instantly, client-side, no round trip." },
           { name: "Row click", description: "Opens a detail panel: full request and response, pretty-printed JSON, binary bodies shown as a size with a \"show raw base64\" toggle instead of dumping garbage text." },
           { name: "Star", description: "Bookmarks an entry so it's easy to find again later." },
-          { name: "Send to Repeater", description: "Opens the selected exchange's request in a new Repeater tab." },
-          { name: "Export CSV / Export JSON", description: "Saves the currently-filtered list — id, method, url, host, port, isSSL, status, size, time, tags, timestamps, starred, source tool — to a file you choose. Bodies/headers aren't included (this is a \"what happened\" summary, not a full traffic dump — use Packet Capture's .pcap export or the raw history.jsonl on disk for that)." },
+          { name: "Send to Repeater / Compare / Fuzzer / Race", description: "Opens the selected exchange in the corresponding tool, pre-filled." },
+          { name: "Replay as…", description: "Opens a menu of your saved Identities (see the Identities section) — picking one resends the request with that identity's headers overlaid, in a new labeled Repeater tab." },
+          { name: "Ask Claude / Export code", description: "One-shot AI analysis of the selected exchange, or a ready-to-run Python/JavaScript/Go snippet reproducing the request (see the AI section for the former)." },
+          { name: "Finding badges", description: "A small flag badge with a count appears on any row the passive scanner (or the AI agent) has flagged — click through to the Findings board for details." },
+          { name: "Export CSV / Export JSON / Export HAR", description: "Saves the currently-filtered list to a file you choose. CSV/JSON are a \"what happened\" summary (id, method, url, host, port, isSSL, status, size, time, tags, timestamps, starred, source tool) without bodies/headers; HAR is the standard HTTP Archive format (readable by browser devtools, Burp, Postman) and includes full headers and bodies." },
+          { name: "Import HAR", description: "Loads a .har file's entries into History, re-minting ids so nothing collides with what's already there." },
           { name: "Clear", description: "Wipes history (asks for confirmation first)." },
         ],
       },
@@ -375,9 +379,212 @@ export const DOCS_SECTIONS: DocsSection[] = [
   },
 
   {
+    id: "comparer",
+    title: "Comparer",
+    summary: "Line-by-line diff between any two captured requests or responses.",
+    icon: "comparer",
+    body: [
+      {
+        type: "p",
+        text: "Pick two exchanges into slots A and B — via History's \"Compare\" button (fills whichever slot is empty, A first) or the dropdowns on the page itself — and see a colored line diff of the request and the response, headers and bodies included (pretty-printed if it's JSON).",
+      },
+      {
+        type: "example",
+        title: "Spotting an authorization difference",
+        steps: [
+          "Send the same request twice — once as a normal user, once with a tampered ID or role claim (or via Identities' Replay as…).",
+          "Send both into the Comparer.",
+          "A response body that differs where it shouldn't (extra fields, a different user's data, a permission flag) jumps out immediately as a highlighted line.",
+        ],
+      },
+      {
+        type: "note",
+        text: "Picks are kept in shared app state, not the page's own component state — navigating away and back (or letting the AI page jump you elsewhere) never loses slot A or B.",
+      },
+    ],
+  },
+
+  {
+    id: "identities",
+    title: "Identities",
+    summary: "Named sets of auth headers you can replay a request as, for broken-access-control testing.",
+    icon: "identities",
+    body: [
+      {
+        type: "p",
+        text: "Save a named identity (\"Admin\", \"User A\", \"Anonymous\"...) as a set of headers — typically Authorization and/or Cookie. From any request in History, \"Replay as…\" opens a menu of your saved identities; picking one opens a new Repeater tab with that request's headers overlaid by the identity's (same header name → overwritten, otherwise added), labeled with the identity's name, and sends it immediately.",
+      },
+      {
+        type: "example",
+        title: "IDOR / broken access control check",
+        steps: [
+          "Capture a request that reads or modifies a specific resource (e.g. GET /account/42) while logged in as one user.",
+          "Save that user's session as an Identity, and a second user's session as another Identity.",
+          "From History, \"Replay as…\" the second identity against the first user's request.",
+          "If the response still returns the first user's data, the endpoint isn't checking that the authenticated identity actually owns resource 42 — a classic IDOR.",
+        ],
+      },
+    ],
+  },
+
+  {
+    id: "fuzzer",
+    title: "Fuzzer",
+    summary: "Intruder-style Sniper attack: mark payload positions with §…§, run a wordlist through each.",
+    icon: "fuzzer",
+    body: [
+      {
+        type: "p",
+        text: "Select any text in the URL, a header value, or the body and click \"Mark §\" to wrap it in §…§, turning it into a payload position. Load or paste a wordlist (one payload per line), then Start attack: every position is attacked in turn — for each payload, one request is sent with that position replaced and every other marked position left at its own base value (the text that was between its § §), matching Burp's Sniper attack type.",
+      },
+      {
+        type: "fields",
+        items: [
+          { name: "Concurrent requests", description: "How many requests run in parallel at once.", default: "5" },
+          { name: "Results grid", description: "Index, position, payload, status, size, time for every response — sortable by status/size/time to spot the outlier that reveals a bypass, injection, or valid credential." },
+        ],
+      },
+      {
+        type: "note",
+        kind: "warn",
+        text: "This sends real traffic — one request per (position × payload) combination. A large wordlist against multiple positions can mean a lot of requests; start small.",
+      },
+    ],
+  },
+
+  {
+    id: "race",
+    title: "Race",
+    summary: "Fire N identical requests as close to simultaneously as possible, to catch check-then-use race conditions.",
+    icon: "race",
+    body: [
+      {
+        type: "p",
+        text: "Fires every copy of a request in the same synchronous loop — all sockets start connecting before any of them can resolve — the classic way to make a non-atomic check-then-use flaw (a coupon redeemed twice, a balance spent twice, a single-use token accepted more than once) actually manifest, when hitting the endpoint one request at a time never would.",
+      },
+      {
+        type: "fields",
+        items: [
+          { name: "Concurrent requests", description: "How many identical copies to fire.", default: "20", },
+        ],
+      },
+      {
+        type: "note",
+        text: "When more than one request comes back with a success status that should only have been possible once, Wraith flags it directly in the results panel.",
+      },
+    ],
+  },
+
+  {
+    id: "chain",
+    title: "Attack Chain",
+    summary: "A multi-step request sequence where a later step can use a value extracted from an earlier one.",
+    icon: "chain",
+    body: [
+      {
+        type: "p",
+        text: "Build a numbered sequence of requests and reference a value extracted from any earlier step's response anywhere in a later step — the URL, a header, or the body — with {{varName}}. Running the chain sends each step in order through Repeater's engine, substituting known variables before each send and applying that step's extraction rules to its response afterward, so later steps see values captured moments earlier in the same run.",
+      },
+      {
+        type: "fields",
+        items: [
+          { name: "Extract variables from this step's response", description: "One or more {varName, source} rules per step. source is either json:$.path.to.field (a dot path into the parsed JSON body) or regex:<pattern> (the first capture group, or the whole match if the pattern has none)." },
+          { name: "↑ / ↓", description: "Reorders a step." },
+          { name: "Export PoC", description: "Generates a standalone Python script reproducing the whole chain — including the same variable substitution and extraction logic — that runs outside Wraith with just `pip install requests`." },
+        ],
+      },
+      {
+        type: "example",
+        title: "Login → use a session token",
+        steps: [
+          "Step 1: POST the login request, with a rule extracting json:$.access_token into a variable named token.",
+          "Step 2: any request that needs auth, with an Authorization header set to Bearer {{token}}.",
+          "Run chain — step 2 automatically uses whatever token step 1's response actually returned, not a value you had to copy-paste by hand.",
+        ],
+      },
+    ],
+  },
+
+  {
+    id: "oob",
+    title: "OOB Interactions",
+    summary: "Generate a unique domain and watch for DNS/HTTP/SMTP hits against it, to confirm blind vulnerabilities.",
+    icon: "oob",
+    body: [
+      {
+        type: "p",
+        text: "Uses interactsh (github.com/projectdiscovery/interactsh), a free third-party out-of-band interaction service. Start listener generates a fresh RSA keypair locally and registers a unique subdomain with a public interactsh server; Wraith then polls automatically every few seconds and decrypts any interaction reported against that domain using the private key, which never leaves this machine.",
+      },
+      {
+        type: "example",
+        title: "Confirming a blind SSRF",
+        steps: [
+          "Start a listener and copy the generated domain.",
+          "Paste it into a parameter you suspect the server fetches server-side without validation (a webhook URL, an image-fetch field, an XML external entity, etc.) and send the request.",
+          "If the target actually makes that request, an interaction shows up here within a few seconds — protocol, source IP, and the raw request/response interactsh captured — even though the original response gave you no visible sign anything happened.",
+        ],
+      },
+      {
+        type: "note",
+        kind: "warn",
+        text: "The domain you generate and any interaction data reported against it pass through interactsh's public infrastructure, not just this machine — don't use it against traffic you wouldn't want a third-party OOB service to see.",
+      },
+    ],
+  },
+
+  {
+    id: "ai",
+    title: "AI",
+    summary: "An agentic assistant, backed by your own Anthropic API key, that can read History, decode data, record findings, and drive the app.",
+    icon: "ai",
+    body: [
+      {
+        type: "p",
+        text: "Two related but distinct features, both configured with an Anthropic API key in Settings → AI (a console.anthropic.com developer key — not a claude.ai Pro/Max login; there's no supported way for a third-party desktop app to use a claude.ai subscription directly).",
+      },
+      {
+        type: "list",
+        items: [
+          "\"Ask Claude\" buttons, scattered across History, JWT, and elsewhere — a one-shot analysis of exactly what's in front of you (a request/response, a decoded token) with no ability to take any action.",
+          "The AI page itself — give it a goal in plain language (e.g. \"Look through History and tell me what vulnerabilities you can find\") and it runs an agentic tool-use loop: it can list/search/read History, run Decoder operations, decode JWTs, record and update Findings, navigate the app's own UI to show you what it's looking at, and — only when it decides it's clearly useful, flagged distinctly in the transcript as sending live traffic — fire a single crafted request through Repeater to test a hypothesis.",
+        ],
+      },
+      {
+        type: "note",
+        kind: "warn",
+        text: "The one tool that sends real traffic (send_repeater_request) is visibly marked in the transcript every time it's used. Everything else only reads data you've already captured or written locally.",
+      },
+    ],
+  },
+
+  {
+    id: "findings",
+    title: "Findings",
+    summary: "A Kanban board of issues you've flagged manually, the AI agent has recorded, or the passive scanner caught automatically.",
+    icon: "findings",
+    body: [
+      {
+        type: "p",
+        text: "Every completed exchange (proxy traffic and Repeater sends alike) is passively scanned the moment its response arrives — no extra traffic, no explicit action needed — for a short list of high-signal, low-noise issues: missing security headers on HTML responses (CSP, X-Frame-Options, X-Content-Type-Options, HSTS), cookies missing Secure/HttpOnly/SameSite, dangerous or wildcard CORS, likely secrets in a response body (AWS/Google/Slack/Stripe key patterns, generic api_key/secret assignments), and GraphQL introspection left enabled. Each hit becomes a Finding, tagged with which exchange it came from.",
+      },
+      {
+        type: "fields",
+        items: [
+          { name: "Columns", description: "To do / Testing / Confirmed / Reported — drag a finding's own status dropdown to move it." },
+          { name: "Sidebar badge", description: "Shows the count of findings not yet marked Reported, updating live as the scanner or the AI agent add new ones." },
+        ],
+      },
+      {
+        type: "note",
+        text: "Passive-scan findings are a starting point, not a verdict — the description explicitly says what to verify before treating one as confirmed. Severity is intentionally conservative (most start at low/info/medium).",
+      },
+    ],
+  },
+
+  {
     id: "settings",
     title: "Settings",
-    summary: "Proxy behavior, general preferences, highlight rules, CA management, and the danger zone.",
+    summary: "Proxy behavior, AI, Match & Replace, general preferences, highlight rules, CA management, session import/export, and the danger zone.",
     icon: "settings",
     body: [
       {
@@ -386,6 +593,9 @@ export const DOCS_SECTIONS: DocsSection[] = [
           { name: "Proxy → Port / Host", description: "Where the proxy listens.", default: "8081 / 0.0.0.0" },
           { name: "Proxy → Max body capture (MB)", description: "Bodies larger than this are still delivered to the client in full — only the first N MB is kept for the History/Repeater preview, so a huge download doesn't bloat memory." },
           { name: "Proxy → Allow self-signed upstream TLS", description: "Whether Wraith tolerates bad certificates on the REAL target server it's proxying to — independent from the browser-facing MITM cert, which is always Wraith's own." },
+          { name: "AI → Anthropic API key / Model", description: "Powers both the \"Ask Claude\" buttons and the AI page's agent. Stored locally, sent only to Anthropic's API. \"Test connection\" round-trips a minimal request to confirm the key and model work." },
+          { name: "Match & Replace", description: "Global find/replace rules applied to every request/response through the proxy: rewrite a header, the URL, or body text, by plain substring or regex. Header/URL rewrites apply on every request/response; body rewriting only applies while Intercept Responses is on, since the body has to be fully buffered first. Takes effect immediately, no restart needed." },
+          { name: "General → Theme", description: "Dark (default) or Light — applies instantly across the whole app." },
           { name: "General → History limit", description: "How many exchanges History keeps in memory before dropping the oldest." },
           { name: "General → Confirm before dropping", description: "Adds a confirmation prompt before Drop in Intercept." },
           { name: "General → Flash red on capture", description: "Toggles the Intercept arrival animation described in the Intercept section." },
@@ -394,6 +604,7 @@ export const DOCS_SECTIONS: DocsSection[] = [
           { name: "General → Accent colors", description: "Two color pickers driving the app's signature teal → violet gradient — changes apply live across the whole interface." },
           { name: "General → Open DevTools on launch", description: "Developer convenience; takes effect on the next launch." },
           { name: "Highlight rules", description: "User-defined {enabled, color, label, matches a tag} rules controlling History's row color-tinting. Ships with sensible defaults (JSON, GraphQL, Auth/Cookies, 4xx/5xx) — add, edit, or remove freely." },
+          { name: "Session → Export/Import", description: "Saves History, Findings, Identities and proxy config (incl. Match & Replace rules) to a single portable .wraith file — hand it to a teammate or archive an engagement. Never includes the AI API key. Importing adds to your current History/Findings/Identities and overwrites your proxy settings, highlight rules and general prefs." },
           { name: "Certificate Authority → Regenerate", description: "Wipes the current root CA and every certificate signed off it. The next proxy start mints a brand new one — every browser that trusted the old cert needs to trust the new one again. Asks for confirmation." },
           { name: "Danger zone → Purge all Wraith data", description: "Deletes settings, history, and the CA. Requires typing DELETE to confirm." },
         ],

@@ -94,6 +94,22 @@ export interface ScopeRule {
   enabled: boolean;
 }
 
+export type MatchReplaceScope = "request" | "response";
+export type MatchReplaceTarget = "url" | "header" | "body";
+
+export interface MatchReplaceRule {
+  id: string;
+  enabled: boolean;
+  label: string;
+  scope: MatchReplaceScope;
+  target: MatchReplaceTarget;
+  /** only used when target === "header" -- the header name to rewrite the value of */
+  headerName?: string;
+  matchType: "text" | "regex";
+  match: string;
+  replace: string;
+}
+
 export interface ProxySettings {
   port: number;
   host: string;
@@ -103,6 +119,7 @@ export interface ProxySettings {
   upstreamProxy?: string; // optional chained proxy host:port
   allowInsecureUpstream: boolean; // rejectUnauthorized:false for backend TLS
   maxBodyCaptureBytes: number;
+  matchReplaceRules: MatchReplaceRule[];
 }
 
 export interface GeneralSettings {
@@ -123,11 +140,19 @@ export interface GeneralSettings {
   openDevToolsOnStart: boolean;
 }
 
+export interface AiSettings {
+  /** Anthropic API key (console.anthropic.com) -- NOT a claude.ai Pro/Max login, there is no
+   *  supported way for a third-party desktop app to authenticate with a claude.ai subscription. */
+  apiKey: string;
+  model: string;
+}
+
 export interface WraithSettings {
   proxy: ProxySettings;
   highlightRules: HighlightRule[];
   general: GeneralSettings;
-  theme: "wraith-dark";
+  ai: AiSettings;
+  theme: "wraith-dark" | "wraith-light";
   firstRunComplete: boolean;
 }
 
@@ -386,4 +411,179 @@ export interface WriteFileRequest {
   path: string;
   content: string;
   encoding?: "utf-8" | "base64";
+}
+
+// ----------------------------------------------------------------fuzzer
+
+export interface FuzzerRequest {
+  method: string;
+  /** may contain §marked§ positions in the URL, header values and/or body -- the text between § § is the base value used when that position isn't the one being attacked */
+  url: string;
+  headers: { key: string; value: string }[];
+  bodyText: string;
+  insecure: boolean;
+  payloads: string[];
+  concurrency?: number;
+}
+
+export interface FuzzerStartHandle {
+  jobId: string;
+  totalPositions: number;
+  totalRequests: number;
+  /** set (and jobId "") when validation fails before any job starts, e.g. no §positions§ marked or no payloads -- returned synchronously rather than as an event so the caller can never miss it. */
+  error?: string;
+}
+
+export interface FuzzerResultRow {
+  index: number;
+  position: number;
+  payload: string;
+  statusCode: number;
+  sizeBytes: number;
+  timeMs: number;
+  error?: string;
+}
+
+export type FuzzerEventType = "result" | "done" | "error" | "stopped";
+
+export interface FuzzerEvent {
+  jobId: string;
+  type: FuzzerEventType;
+  row?: FuzzerResultRow;
+  completed?: number;
+  total?: number;
+  message?: string;
+}
+
+// ------------------------------------------------------------------- oob
+
+export interface OobStartResult {
+  sessionId: string;
+  domain: string;
+  error?: string;
+}
+
+export interface OobInteraction {
+  protocol: string;
+  uniqueId: string;
+  fullId: string;
+  qType?: string;
+  rawRequest?: string;
+  rawResponse?: string;
+  remoteAddress: string;
+  timestamp: string;
+}
+
+export type OobEventType = "interaction" | "error";
+
+export interface OobEvent {
+  sessionId: string;
+  type: OobEventType;
+  interaction?: OobInteraction;
+  message?: string;
+}
+
+// ------------------------------------------------------------------ race
+
+export interface RaceRequest {
+  method: string;
+  url: string;
+  headers: { key: string; value: string }[];
+  bodyText: string;
+  insecure: boolean;
+  /** how many identical copies to fire as close to simultaneously as possible */
+  count: number;
+}
+
+export interface RaceStartHandle {
+  jobId: string;
+  error?: string;
+}
+
+export interface RaceResultRow {
+  index: number;
+  statusCode: number;
+  sizeBytes: number;
+  timeMs: number;
+  error?: string;
+}
+
+export type RaceEventType = "result" | "done";
+
+export interface RaceEvent {
+  jobId: string;
+  type: RaceEventType;
+  row?: RaceResultRow;
+  completed?: number;
+  total?: number;
+}
+
+// ------------------------------------------------------------- identities
+
+export interface Identity {
+  id: string;
+  name: string;
+  color: string;
+  /** headers to overlay onto a request's own headers when replaying as this identity (same key -> overwritten, e.g. Authorization/Cookie) */
+  headers: { key: string; value: string }[];
+}
+
+export type NewIdentity = Omit<Identity, "id">;
+
+// ---------------------------------------------------------------- findings
+
+export type FindingSeverity = "info" | "low" | "medium" | "high" | "critical";
+export type FindingStatus = "todo" | "testing" | "confirmed" | "reported";
+export type FindingSource = "manual" | "ai" | "passive-scan";
+
+export interface Finding {
+  id: string;
+  title: string;
+  description: string;
+  severity: FindingSeverity;
+  status: FindingStatus;
+  exchangeId?: string;
+  url?: string;
+  source: FindingSource;
+  createdAt: number;
+}
+
+export type NewFinding = Omit<Finding, "id" | "createdAt">;
+
+// --------------------------------------------------------------------- ai
+
+export interface AiTestConnectionResult {
+  ok: boolean;
+  model?: string;
+  error?: string;
+}
+
+export interface AiExplainRequest {
+  /** pre-built plain-text context (request/response, packet, cracked hash, whatever the caller has) */
+  context: string;
+  /** optional specific question; if omitted the model just gives a general analysis */
+  question?: string;
+}
+
+export interface AiExplainResult {
+  answer: string;
+  error?: string;
+}
+
+export interface AiAgentStartRequest {
+  prompt: string;
+}
+
+export type AiAgentEventType = "text" | "tool_call" | "tool_result" | "done" | "error" | "stopped";
+
+export interface AiAgentEvent {
+  runId: string;
+  type: AiAgentEventType;
+  text?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolOutput?: any;
+  /** true when this tool call sends real traffic to a target (vs. just reading local data) */
+  isActive?: boolean;
+  message?: string;
 }

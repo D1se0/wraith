@@ -27,6 +27,22 @@ import {
   JwtVerifyResult,
   JwtCrackRequest,
   JwtCrackEvent,
+  Finding,
+  NewFinding,
+  Identity,
+  NewIdentity,
+  FuzzerRequest,
+  FuzzerStartHandle,
+  FuzzerEvent,
+  RaceRequest,
+  RaceStartHandle,
+  RaceEvent,
+  OobStartResult,
+  OobEvent,
+  AiExplainRequest,
+  AiExplainResult,
+  AiTestConnectionResult,
+  AiAgentEvent,
 } from "./types";
 
 function on<T>(channel: string, listener: (payload: T) => void): () => void {
@@ -93,6 +109,7 @@ const api = {
     list: (): Promise<Exchange[]> => ipcRenderer.invoke("history:list"),
     clear: (): Promise<void> => ipcRenderer.invoke("history:clear"),
     update: (id: string, patch: Partial<Exchange>): Promise<Exchange | null> => ipcRenderer.invoke("history:update", id, patch),
+    import: (exchanges: Exchange[]): Promise<Exchange[]> => ipcRenderer.invoke("history:import", exchanges),
   },
   repeater: {
     send: (req: {
@@ -143,6 +160,41 @@ const api = {
     start: (req: CrawlerRequest): Promise<{ jobId: string }> => ipcRenderer.invoke("crawler:start", req),
     stop: (jobId: string): Promise<void> => ipcRenderer.invoke("crawler:stop", jobId),
     onEvent: (cb: (evt: CrawlerEvent) => void) => on("crawler:event", cb),
+  },
+  findings: {
+    list: (): Promise<Finding[]> => ipcRenderer.invoke("findings:list"),
+    add: (req: NewFinding): Promise<Finding> => ipcRenderer.invoke("findings:add", req),
+    update: (id: string, patch: Partial<Finding>): Promise<Finding | null> => ipcRenderer.invoke("findings:update", id, patch),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke("findings:delete", id),
+    clear: (): Promise<void> => ipcRenderer.invoke("findings:clear"),
+    onNew: (cb: (finding: Finding) => void) => on("findings:new", cb),
+  },
+  identities: {
+    list: (): Promise<Identity[]> => ipcRenderer.invoke("identities:list"),
+    add: (req: NewIdentity): Promise<Identity> => ipcRenderer.invoke("identities:add", req),
+    update: (id: string, patch: Partial<Identity>): Promise<Identity | null> => ipcRenderer.invoke("identities:update", id, patch),
+    delete: (id: string): Promise<boolean> => ipcRenderer.invoke("identities:delete", id),
+  },
+  fuzzer: {
+    start: (req: FuzzerRequest): Promise<FuzzerStartHandle> => ipcRenderer.invoke("fuzzer:start", req),
+    stop: (jobId: string): Promise<void> => ipcRenderer.invoke("fuzzer:stop", jobId),
+    onEvent: (cb: (evt: FuzzerEvent) => void) => on("fuzzer:event", cb),
+  },
+  race: {
+    start: (req: RaceRequest): Promise<RaceStartHandle> => ipcRenderer.invoke("race:start", req),
+    onEvent: (cb: (evt: RaceEvent) => void) => on("race:event", cb),
+  },
+  oob: {
+    start: (): Promise<OobStartResult> => ipcRenderer.invoke("oob:start"),
+    stop: (sessionId: string): Promise<void> => ipcRenderer.invoke("oob:stop", sessionId),
+    onEvent: (cb: (evt: OobEvent) => void) => on("oob:event", cb),
+  },
+  ai: {
+    testConnection: (): Promise<AiTestConnectionResult> => ipcRenderer.invoke("ai:testConnection"),
+    explain: (req: AiExplainRequest): Promise<AiExplainResult> => ipcRenderer.invoke("ai:explain", req),
+    agentStart: (prompt: string): Promise<{ runId: string }> => ipcRenderer.invoke("ai:agentStart", { prompt }),
+    agentStop: (runId: string): Promise<void> => ipcRenderer.invoke("ai:agentStop", runId),
+    onAgentEvent: (cb: (evt: AiAgentEvent) => void) => on("ai:agentEvent", cb),
   },
 };
 

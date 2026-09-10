@@ -4,6 +4,7 @@ import { DiscoveredCertInfo, NetworkInterfaceInfo, WraithSettings } from "../../
 import { IconShield, IconCopy, IconPlay, IconStop, IconExternal, IconCheck } from "../lib/icons";
 import { copyToClipboard } from "../lib/format";
 import { GITHUB_REPO_URL } from "../lib/constants";
+import { hasSeenTour } from "../components/OnboardingTour";
 
 type BrowserTab = "firefox" | "chrome" | "system";
 
@@ -49,7 +50,11 @@ export function Welcome() {
 
   const finish = async () => {
     await window.wraith.settings.update({ firstRunComplete: true });
-    setPage("proxy");
+    if (!hasSeenTour()) {
+      document.dispatchEvent(new CustomEvent("wraith:start-tour"));
+    } else {
+      setPage("proxy");
+    }
   };
 
   return (
@@ -211,6 +216,9 @@ export function Welcome() {
       <div className="row between">
         <button className="btn btn-ghost" onClick={() => window.wraith.app.openExternal(GITHUB_REPO_URL)}>
           <IconExternal size={13} /> Project on GitHub
+        </button>
+        <button className="btn btn-ghost" onClick={() => document.dispatchEvent(new CustomEvent("wraith:start-tour"))}>
+          Take the tour
         </button>
         <button className="btn btn-primary" onClick={finish}>
           <IconCheck size={14} /> Got it, let's go

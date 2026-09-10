@@ -13,6 +13,14 @@ import {
   IconCrawler,
   IconJwt,
   IconSettingsGear,
+  IconCompare,
+  IconUsers,
+  IconZap,
+  IconRace,
+  IconLink,
+  IconWifi,
+  IconAi,
+  IconFlag,
 } from "../components/Icons";
 
 const ICONS: Record<string, (props: { size?: number }) => ReactElement> = {
@@ -26,6 +34,14 @@ const ICONS: Record<string, (props: { size?: number }) => ReactElement> = {
   curl: IconCurl,
   crawler: IconCrawler,
   jwt: IconJwt,
+  comparer: IconCompare,
+  identities: IconUsers,
+  fuzzer: IconZap,
+  race: IconRace,
+  chain: IconLink,
+  oob: IconWifi,
+  ai: IconAi,
+  findings: IconFlag,
   settings: IconSettingsGear,
 };
 

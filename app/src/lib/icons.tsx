@@ -57,6 +57,7 @@ export const IconLock = (p: IconProps) => base(<><rect x="5" y="10.5" width="14"
 export const IconWarning = (p: IconProps) => base(<><path d="M12 3 2 20h20L12 3Z" /><path d="M12 10v4" /><circle cx="12" cy="17" r="0.8" fill="currentColor" /></>, p);
 export const IconCheck = (p: IconProps) => base(<path d="M5 13l4 4L19 7" />, p);
 export const IconDownload = (p: IconProps) => base(<><path d="M12 3v12" /><path d="M7 10l5 5 5-5" /><path d="M5 20h14" /></>, p);
+export const IconUpload = (p: IconProps) => base(<><path d="M12 21V9" /><path d="M7 14l5-5 5 5" /><path d="M5 20h14" /></>, p);
 export const IconJwt = (p: IconProps) =>
   base(
     <>
@@ -64,6 +65,54 @@ export const IconJwt = (p: IconProps) =>
       <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
       <circle cx="19.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
       <path d="M6.6 12h3.8M13.6 12h3.8" />
+    </>,
+    p
+  );
+export const IconAi = (p: IconProps) =>
+  base(
+    <>
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" />
+      <rect x="7.5" y="7.5" width="9" height="9" rx="2.5" />
+    </>,
+    p
+  );
+export const IconFlag = (p: IconProps) => base(<><path d="M6 3v18" /><path d="M6 4h12l-3 4 3 4H6" /></>, p);
+export const IconLoader = (p: IconProps) => base(<path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" />, p);
+export const IconZap = (p: IconProps) => base(<path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />, p);
+export const IconLink = (p: IconProps) =>
+  base(
+    <>
+      <path d="M9.5 14.5l5-5" />
+      <path d="M8 16.5 5.5 19a3 3 0 0 1-4-4.5L4 12" />
+      <path d="M16 7.5 18.5 5a3 3 0 0 1 4 4.5L20 12" />
+    </>,
+    p
+  );
+export const IconRace = (p: IconProps) =>
+  base(
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </>,
+    p
+  );
+export const IconUsers = (p: IconProps) =>
+  base(
+    <>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 20c0-3.3 2.5-6 5.5-6s5.5 2.7 5.5 6" />
+      <path d="M16 8.5c1.5 0.3 2.5 1.6 2.5 3s-1 2.7-2.5 3" />
+      <path d="M20.5 20c0-2.7-1.8-5-4-5.7" />
+    </>,
+    p
+  );
+export const IconCompare = (p: IconProps) =>
+  base(
+    <>
+      <path d="M8 4v16" />
+      <path d="M16 4v16" />
+      <path d="M4 9h4M4 15h4" />
+      <path d="M16 9h4M16 15h4" />
     </>,
     p
   );

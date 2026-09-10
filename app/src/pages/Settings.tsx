@@ -1,10 +1,17 @@
-import { useEffect, useState } from "react";
-import { HighlightRule, ExchangeTag, WraithSettings, DiscoveredCertInfo, NetworkInterfaceInfo } from "../../electron/types";
-import { IconPlus, IconTrash, IconExternal, IconShield } from "../lib/icons";
+import { useEffect, useRef, useState } from "react";
+import { HighlightRule, ExchangeTag, WraithSettings, DiscoveredCertInfo, NetworkInterfaceInfo, MatchReplaceRule, MatchReplaceScope, MatchReplaceTarget } from "../../electron/types";
+import { IconPlus, IconTrash, IconExternal, IconShield, IconAi, IconCheck, IconWarning, IconDownload, IconUpload } from "../lib/icons";
 import { GITHUB_REPO_URL } from "../lib/constants";
 import { useApp } from "../context/AppContext";
+import { buildSession, applySession, WraithSession } from "../lib/session";
 
 const TAGS: ExchangeTag[] = ["json", "graphql", "html", "xml", "js", "css", "image", "auth", "cookie", "form", "error", "websocket"];
+
+const AI_MODELS = [
+  { id: "claude-opus-5", label: "Claude Opus 5 (most capable, slower)" },
+  { id: "claude-sonnet-5", label: "Claude Sonnet 5 (recommended)" },
+  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5 (fastest, cheapest)" },
+];
 
 function toHexColor(hexNoHash: string): string {
   return hexNoHash.startsWith("#") ? hexNoHash : `#${hexNoHash}`;
@@ -21,6 +28,9 @@ export function Settings() {
   const [cert, setCert] = useState<DiscoveredCertInfo | null>(null);
   const [interfaces, setInterfaces] = useState<NetworkInterfaceInfo["name"][]>([]);
   const [regenerating, setRegenerating] = useState(false);
+  const [testingAi, setTestingAi] = useState(false);
+  const [aiTestResult, setAiTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const sessionInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     window.wraith.settings.get().then(setSettings);
@@ -38,6 +48,18 @@ export function Settings() {
 
   const saveProxy = (patch: Partial<WraithSettings["proxy"]>) => save({ proxy: { ...settings.proxy, ...patch } });
   const saveGeneral = (patch: Partial<WraithSettings["general"]>) => save({ general: { ...settings.general, ...patch } });
+  const saveAi = (patch: Partial<WraithSettings["ai"]>) => save({ ai: { ...settings.ai, ...patch } });
+
+  const testAiConnection = async () => {
+    setTestingAi(true);
+    setAiTestResult(null);
+    try {
+      const res = await window.wraith.ai.testConnection();
+      setAiTestResult(res.ok ? { ok: true, message: `Connected (${res.model}).` } : { ok: false, message: res.error || "Connection failed." });
+    } finally {
+      setTestingAi(false);
+    }
+  };
 
   const setAccent = (which: "accentFrom" | "accentTo", hex: string) => {
     const clean = stripHash(hex);
@@ -52,6 +74,25 @@ export function Settings() {
   const addRule = () => {
     const rule: HighlightRule = { id: `hl-${Date.now()}`, label: "New rule", enabled: true, color: "#4fb0ff", matchTag: "json", matchScope: "any" };
     save({ highlightRules: [...settings.highlightRules, rule] });
+  };
+
+  const saveMatchReplaceRules = (rules: MatchReplaceRule[]) => save({ proxy: { ...settings.proxy, matchReplaceRules: rules } });
+  const updateMrRule = (id: string, patch: Partial<MatchReplaceRule>) =>
+    saveMatchReplaceRules(settings.proxy.matchReplaceRules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const removeMrRule = (id: string) => saveMatchReplaceRules(settings.proxy.matchReplaceRules.filter((r) => r.id !== id));
+  const addMrRule = () => {
+    const rule: MatchReplaceRule = {
+      id: `mr-${Date.now()}`,
+      enabled: true,
+      label: "New rule",
+      scope: "request",
+      target: "header",
+      headerName: "User-Agent",
+      matchType: "text",
+      match: "",
+      replace: "",
+    };
+    saveMatchReplaceRules([...settings.proxy.matchReplaceRules, rule]);
   };
 
   const regenerateCa = async () => {
@@ -71,6 +112,30 @@ export function Settings() {
     await window.wraith.app.purgeAllData();
     toast("All Wraith data purged. Restart the app.", "error");
     setPurgeConfirm("");
+  };
+
+  const exportSession = async () => {
+    const session = await buildSession();
+    const path = await window.wraith.app.chooseSaveFile("session.wraith");
+    if (!path) return;
+    try {
+      await window.wraith.app.writeFile({ path, content: JSON.stringify(session, null, 2), encoding: "utf-8" });
+      toast(`Exported session (${session.history.length} history, ${session.findings.length} findings, ${session.identities.length} identities) to ${path}`);
+    } catch (err: any) {
+      toast(`Export failed: ${err?.message || err}`, "error");
+    }
+  };
+
+  const importSession = async (file: File) => {
+    try {
+      const text = await file.text();
+      const session = JSON.parse(text) as WraithSession;
+      const result = await applySession(session);
+      toast(`Imported session: ${result.historyCount} history, ${result.findingsCount} findings, ${result.identitiesCount} identities.`);
+      window.wraith.settings.get().then(setSettings);
+    } catch (err: any) {
+      toast(`Import failed: ${err?.message || err}`, "error");
+    }
   };
 
   return (
@@ -149,8 +214,82 @@ export function Settings() {
       </div>
 
       <div className="panel">
+        <div className="panel-header">
+          <IconAi size={18} style={{ color: "var(--accent-a)" }} />
+          <div>
+            <div className="panel-title">AI</div>
+            <div className="panel-sub">Powers the "Ask Claude" buttons and the agentic AI page. Uses your own Anthropic API key.</div>
+          </div>
+        </div>
+        <div className="grid-2" style={{ marginTop: 12 }}>
+          <div className="field">
+            <label>Anthropic API key</label>
+            <input
+              type="password"
+              value={settings.ai.apiKey}
+              onChange={(e) => saveAi({ apiKey: e.target.value })}
+              placeholder="sk-ant-..."
+              autoComplete="off"
+            />
+            <span className="field-hint">
+              From{" "}
+              <a className="link" style={{ cursor: "pointer" }} onClick={() => window.wraith.app.openExternal("https://console.anthropic.com/settings/keys")}>
+                console.anthropic.com
+              </a>
+              . This is a developer API key, not your claude.ai login — there's no supported way for a desktop app to use a Pro/Max
+              subscription directly. Stored locally, never sent anywhere except Anthropic's API.
+            </span>
+          </div>
+          <div className="field">
+            <label>Model</label>
+            <select value={settings.ai.model} onChange={(e) => saveAi({ model: e.target.value })}>
+              {AI_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="row" style={{ marginTop: 10, gap: 10 }}>
+          <button className="btn btn-sm" disabled={!settings.ai.apiKey || testingAi} onClick={testAiConnection}>
+            {testingAi ? "Testing…" : "Test connection"}
+          </button>
+          {aiTestResult && (
+            <div className={`row badge ${aiTestResult.ok ? "badge-2xx" : "badge-5xx"}`} style={{ gap: 6, width: "fit-content" }}>
+              {aiTestResult.ok ? <IconCheck size={12} /> : <IconWarning size={12} />}
+              {aiTestResult.message}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="panel">
         <div className="panel-title">General</div>
         <div className="grid-2" style={{ marginTop: 12 }}>
+          <div className="field">
+            <label>Theme</label>
+            <div className="row" style={{ gap: 8 }}>
+              <button
+                className={`chip ${settings.theme === "wraith-dark" ? "active" : ""}`}
+                onClick={() => {
+                  document.documentElement.setAttribute("data-theme", "dark");
+                  save({ theme: "wraith-dark" });
+                }}
+              >
+                Dark
+              </button>
+              <button
+                className={`chip ${settings.theme === "wraith-light" ? "active" : ""}`}
+                onClick={() => {
+                  document.documentElement.setAttribute("data-theme", "light");
+                  save({ theme: "wraith-light" });
+                }}
+              >
+                Light
+              </button>
+            </div>
+          </div>
           <div className="field">
             <label>History limit</label>
             <input type="number" value={settings.general.historyLimit} onChange={(e) => saveGeneral({ historyLimit: Number(e.target.value) })} />
@@ -242,6 +381,86 @@ export function Settings() {
             </div>
           ))}
         </div>
+      </div>
+
+      <div className="panel">
+        <div className="row between">
+          <div>
+            <div className="panel-title">Match &amp; Replace</div>
+            <div className="panel-sub">Global find/replace rules applied to every request/response through the proxy — rewrite headers, URLs or body text on the fly.</div>
+          </div>
+          <button className="btn btn-sm" onClick={addMrRule}>
+            <IconPlus size={12} /> Add rule
+          </button>
+        </div>
+        <div className="stack-sm" style={{ marginTop: 10 }}>
+          {settings.proxy.matchReplaceRules.length === 0 && <div className="muted">No rules yet.</div>}
+          {settings.proxy.matchReplaceRules.map((r) => (
+            <div key={r.id} className="row wrap" style={{ gap: 8 }}>
+              <input type="checkbox" checked={r.enabled} onChange={(e) => updateMrRule(r.id, { enabled: e.target.checked })} />
+              <input type="text" value={r.label} onChange={(e) => updateMrRule(r.id, { label: e.target.value })} style={{ width: 120 }} />
+              <select value={r.scope} onChange={(e) => updateMrRule(r.id, { scope: e.target.value as MatchReplaceScope })} style={{ width: 100 }}>
+                <option value="request">Request</option>
+                <option value="response">Response</option>
+              </select>
+              <select value={r.target} onChange={(e) => updateMrRule(r.id, { target: e.target.value as MatchReplaceTarget })} style={{ width: 100 }}>
+                <option value="header">Header</option>
+                <option value="url">URL</option>
+                <option value="body">Body</option>
+              </select>
+              {r.target === "header" && (
+                <input
+                  type="text"
+                  value={r.headerName || ""}
+                  onChange={(e) => updateMrRule(r.id, { headerName: e.target.value })}
+                  placeholder="Header name"
+                  style={{ width: 130 }}
+                />
+              )}
+              <select value={r.matchType} onChange={(e) => updateMrRule(r.id, { matchType: e.target.value as "text" | "regex" })} style={{ width: 80 }}>
+                <option value="text">Text</option>
+                <option value="regex">Regex</option>
+              </select>
+              <input type="text" value={r.match} onChange={(e) => updateMrRule(r.id, { match: e.target.value })} placeholder="Match" style={{ width: 130 }} />
+              <span className="muted">→</span>
+              <input type="text" value={r.replace} onChange={(e) => updateMrRule(r.id, { replace: e.target.value })} placeholder="Replace" style={{ width: 130 }} />
+              <button className="btn btn-ghost btn-icon" onClick={() => removeMrRule(r.id)}>
+                <IconTrash size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <span className="field-hint">
+          Response body rewriting only applies while "Intercept Responses" is on (the body has to be fully buffered first) — header and URL rewrites always apply. Takes effect immediately, no proxy restart needed.
+        </span>
+      </div>
+
+      <div className="panel">
+        <div className="panel-title">Session</div>
+        <p className="muted" style={{ marginTop: 6 }}>
+          Save History, Findings, Identities and proxy config (incl. Match &amp; Replace rules) to a single portable <code className="mono">.wraith</code> file — hand
+          it to a teammate or archive an engagement. Doesn't include the AI API key.
+        </p>
+        <div className="row wrap" style={{ marginTop: 10, gap: 8 }}>
+          <button className="btn btn-sm" onClick={exportSession}>
+            <IconDownload size={13} /> Export session
+          </button>
+          <input
+            ref={sessionInputRef}
+            type="file"
+            accept=".wraith,.json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) importSession(f);
+              e.target.value = "";
+            }}
+          />
+          <button className="btn btn-sm" onClick={() => sessionInputRef.current?.click()}>
+            <IconUpload size={13} /> Import session
+          </button>
+        </div>
+        <span className="field-hint">Importing adds to your current History/Findings/Identities, and overwrites your proxy settings, highlight rules and general prefs.</span>
       </div>
 
       <div className="panel">

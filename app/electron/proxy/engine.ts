@@ -7,6 +7,7 @@ import { Proxy } from "http-mitm-proxy";
 import { sslCaDir } from "../ca";
 import { sendHttpRequest } from "../httpClient";
 import { detectTags, matchesScope } from "./rules";
+import { applyMatchReplaceToRequest, applyMatchReplaceToResponse, applyHeaderRules } from "./matchReplace";
 import {
   Exchange,
   CapturedRequest,
@@ -242,13 +243,16 @@ export class WraithProxy extends EventEmitter {
     const hardCap = Math.max(settings.maxBodyCaptureBytes, 1024 * 1024);
     const bodyBuf = await readClientBody(ctx.clientToProxyRequest, hardCap);
 
-    let request: CapturedRequest = {
-      method: reqOptions.method,
-      url: fullUrl,
-      httpVersion: ctx.clientToProxyRequest.httpVersion || "1.1",
-      headers: stringifyHeaders(reqOptions.headers),
-      body: bodyBuf.toString("base64"),
-    };
+    let request: CapturedRequest = applyMatchReplaceToRequest(
+      {
+        method: reqOptions.method,
+        url: fullUrl,
+        httpVersion: ctx.clientToProxyRequest.httpVersion || "1.1",
+        headers: stringifyHeaders(reqOptions.headers),
+        body: bodyBuf.toString("base64"),
+      },
+      settings.matchReplaceRules
+    );
 
     const exchangeId = randomUUID();
     const exchange: Exchange = {
@@ -306,7 +310,11 @@ export class WraithProxy extends EventEmitter {
         maxCaptureBytes: settings.maxBodyCaptureBytes,
         onHeaders: (statusCode, _statusMessage, headers) => {
           if (!willInterceptResponse) {
-            ctx.proxyToClientResponse.writeHead(statusCode, cleanHeadersForWrite(headers));
+            // Body rewriting needs the full buffered response (only available
+            // once Intercept Responses holds it below) -- but header rewrites
+            // are safe here too, since headers are written exactly once.
+            const rewritten = applyHeaderRules(headers, settings.matchReplaceRules, "response");
+            ctx.proxyToClientResponse.writeHead(statusCode, cleanHeadersForWrite(rewritten));
             headersWritten = true;
           }
         },
@@ -320,6 +328,9 @@ export class WraithProxy extends EventEmitter {
       let response: CapturedResponse = result.response;
 
       if (willInterceptResponse) {
+        // Fully buffered at this point, so both headers and body can be
+        // rewritten before the user even sees it in the Intercept panel.
+        response = applyMatchReplaceToResponse(response, settings.matchReplaceRules, true);
         const decision = await this.waitForDecision({
           id: randomUUID(),
           exchangeId,
@@ -337,10 +348,17 @@ export class WraithProxy extends EventEmitter {
         ctx.proxyToClientResponse.writeHead(response.statusCode, cleanHeadersForWrite(response.headers));
         ctx.proxyToClientResponse.end(Buffer.from(response.body, "base64"));
       } else {
+        // Headers were already rewritten (if any rules apply) and written to
+        // the client inside onHeaders above; mirror that here so the History
+        // record matches what the client actually received. The body can't
+        // be rewritten in this branch -- it already streamed through via
+        // onChunk before rules could ever see it.
+        const rewrittenHeaders = applyHeaderRules(response.headers, settings.matchReplaceRules, "response");
         if (!headersWritten) {
-          ctx.proxyToClientResponse.writeHead(response.statusCode, cleanHeadersForWrite(response.headers));
+          ctx.proxyToClientResponse.writeHead(response.statusCode, cleanHeadersForWrite(rewrittenHeaders));
         }
         ctx.proxyToClientResponse.end();
+        response = { ...response, headers: rewrittenHeaders };
       }
 
       exchange.response = response;

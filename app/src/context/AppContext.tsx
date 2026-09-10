@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from "react";
-import { ProxyStatus, InterceptPending, InterceptResolution, CapturedResponse } from "../../electron/types";
+import { ProxyStatus, InterceptPending, InterceptResolution, CapturedResponse, Exchange } from "../../electron/types";
 import { base64ToUtf8, utf8ToBase64 } from "../lib/base64";
 import { EditableRequest } from "../components/RequestEditor";
 
-export type Page = "welcome" | "proxy" | "history" | "repeater" | "decoder" | "capture" | "cracker" | "curl" | "crawler" | "jwt" | "settings";
+export type Page = "welcome" | "proxy" | "history" | "repeater" | "decoder" | "capture" | "cracker" | "curl" | "crawler" | "jwt" | "ai" | "findings" | "comparer" | "identities" | "fuzzer" | "race" | "chain" | "oob" | "settings";
 
 export interface PendingRepeaterRequest {
   method: string;
@@ -85,13 +85,29 @@ function safeHostname(u: string): string {
   }
 }
 
+// ------------------------------------------------------------------- AI
+
+export type AiTranscriptItem =
+  | { kind: "user"; text: string }
+  | { kind: "text"; text: string }
+  | { kind: "tool"; toolName: string; toolInput: any; toolOutput?: string; isActive?: boolean; pending: boolean }
+  | { kind: "error"; text: string }
+  | { kind: "system"; text: string };
+
 interface AppContextValue {
   page: Page;
   setPage: (p: Page) => void;
   proxyStatus: ProxyStatus;
   refreshProxyStatus: () => void;
   /** Creates a brand new Repeater tab pre-filled with this request and switches to the Repeater page. Safe to call repeatedly in quick succession -- each call gets its own tab, nothing is ever overwritten. */
-  sendToRepeater: (req: PendingRepeaterRequest) => void;
+  sendToRepeater: (req: PendingRepeaterRequest, label?: string) => void;
+  /** One-shot seed for the Fuzzer page -- set on navigation from History, consumed and cleared the first time Fuzzer.tsx mounts and reads it. */
+  fuzzerSeed: PendingRepeaterRequest | null;
+  sendToFuzzer: (req: PendingRepeaterRequest) => void;
+  clearFuzzerSeed: () => void;
+  raceSeed: PendingRepeaterRequest | null;
+  sendToRace: (req: PendingRepeaterRequest) => void;
+  clearRaceSeed: () => void;
   toast: (message: string, kind?: "info" | "error") => void;
 
   // Intercept queue lives here (not inside the Intercept page component) so
@@ -126,6 +142,24 @@ interface AppContextValue {
   deleteRepeaterGroup: (id: string) => void;
   setRepeaterTabGroup: (tabId: number, groupId: string | null) => void;
   sendRepeaterGroup: (groupId: string, mode: "parallel" | "sequential") => Promise<void>;
+
+  // AI agent run: lives here (not inside Ai.tsx's component state) for the
+  // same reason as Intercept/Repeater above -- the agent's own tools can
+  // call navigate_to_page mid-run, which unmounts the Ai page while events
+  // are still streaming in. Hosting the transcript and the single always-on
+  // ai:onAgentEvent listener here means neither the transcript nor an
+  // in-flight run is ever silently dropped by that navigation.
+  aiItems: AiTranscriptItem[];
+  aiRunId: string | null;
+  startAiRun: (prompt: string) => Promise<void>;
+  stopAiRun: () => Promise<void>;
+
+  // Comparer: two "slots" of exchanges picked from History/Repeater to
+  // diff against each other. Lives here (not in Comparer.tsx) so picking
+  // slot A from History, navigating around, then picking slot B later
+  // doesn't lose the first pick.
+  comparerSlots: [Exchange | null, Exchange | null];
+  sendToComparer: (exchange: Exchange | null, slot?: 0 | 1) => void;
 }
 
 const AppCtx = createContext<AppContextValue | null>(null);
@@ -167,6 +201,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [interceptEdits, setInterceptEdits] = useState<Record<string, EditableHeld>>({});
   const [interceptArrivalTick, setInterceptArrivalTick] = useState(0);
 
+  const [comparerSlots, setComparerSlots] = useState<[Exchange | null, Exchange | null]>([null, null]);
+
+  const [aiItems, setAiItems] = useState<AiTranscriptItem[]>([]);
+  const [aiRunId, setAiRunId] = useState<string | null>(null);
+  // Same reasoning as repeaterTabsRef: the event listener below is
+  // subscribed exactly once (empty deps) so it never misses an event that
+  // arrives in the same tick a run starts, so it needs the current run id
+  // without waiting for React state to catch up.
+  const aiRunIdRef = useRef<string | null>(null);
+
   const [repeaterTabs, setRepeaterTabs] = useState<RepeaterTab[]>(() => [blankRepeaterTab()]);
   const [repeaterGroups, setRepeaterGroups] = useState<RepeaterGroup[]>([]);
   const [activeRepeaterTabId, setActiveRepeaterTabId] = useState<number | null>(() => repeaterTabs[0]?.id ?? null);
@@ -184,6 +228,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("wraith:lastPage", p);
   }, []);
 
+  const sendToComparer = useCallback(
+    (exchange: Exchange | null, slot?: 0 | 1) => {
+      setComparerSlots((cur) => {
+        const target = slot ?? (cur[0] === null ? 0 : 1);
+        const next: [Exchange | null, Exchange | null] = [...cur];
+        next[target] = exchange;
+        return next;
+      });
+      setPage("comparer");
+    },
+    [setPage]
+  );
+
   const refreshProxyStatus = useCallback(() => {
     window.wraith.proxy.status().then(setProxyStatus).catch(() => undefined);
   }, []);
@@ -194,11 +251,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return off;
   }, [refreshProxyStatus]);
 
-  // Apply a saved accent color once at boot, before the user visits Settings.
+  // Apply the saved accent color and theme once at boot, before the user visits Settings.
   useEffect(() => {
     window.wraith.settings.get().then((s) => {
       if (s.general.accentFrom) document.documentElement.style.setProperty("--accent-a", `#${s.general.accentFrom}`);
       if (s.general.accentTo) document.documentElement.style.setProperty("--accent-b", `#${s.general.accentTo}`);
+      document.documentElement.setAttribute("data-theme", s.theme === "wraith-light" ? "light" : "dark");
     });
   }, []);
 
@@ -212,6 +270,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInterceptArrivalTick((t) => t + 1);
     });
     return off;
+  }, []);
+
+  // Single, always-mounted subscription for the AI agent's event stream --
+  // same reasoning as the Intercept subscription above: a run started on
+  // the AI page must keep streaming even if the agent's own navigate_to_page
+  // tool switches the visible page away from "ai" mid-run.
+  useEffect(() => {
+    const off = window.wraith.ai.onAgentEvent((evt) => {
+      if (evt.runId !== aiRunIdRef.current) return;
+      if (evt.type === "text" && evt.text) {
+        setAiItems((cur) => [...cur, { kind: "text", text: evt.text! }]);
+      } else if (evt.type === "tool_call") {
+        setAiItems((cur) => [...cur, { kind: "tool", toolName: evt.toolName!, toolInput: evt.toolInput, pending: true }]);
+        if (evt.toolName === "navigate_to_page" && evt.toolInput?.page) {
+          setPage(evt.toolInput.page);
+        }
+      } else if (evt.type === "tool_result") {
+        setAiItems((cur) => {
+          const next = [...cur];
+          for (let i = next.length - 1; i >= 0; i--) {
+            const it = next[i];
+            if (it.kind === "tool" && it.pending && it.toolName === evt.toolName) {
+              next[i] = { ...it, toolOutput: evt.toolOutput, isActive: evt.isActive, pending: false };
+              break;
+            }
+          }
+          return next;
+        });
+      } else if (evt.type === "done") {
+        aiRunIdRef.current = null;
+        setAiRunId(null);
+      } else if (evt.type === "stopped") {
+        setAiItems((cur) => [...cur, { kind: "system", text: "Stopped." }]);
+        aiRunIdRef.current = null;
+        setAiRunId(null);
+      } else if (evt.type === "error") {
+        setAiItems((cur) => [...cur, { kind: "error", text: evt.message || "Unknown error" }]);
+        aiRunIdRef.current = null;
+        setAiRunId(null);
+      }
+    });
+    return off;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startAiRun = useCallback(async (prompt: string) => {
+    if (!prompt.trim() || aiRunIdRef.current) return;
+    setAiItems((cur) => [...cur, { kind: "user", text: prompt.trim() }]);
+    const { runId } = await window.wraith.ai.agentStart(prompt.trim());
+    aiRunIdRef.current = runId;
+    setAiRunId(runId);
+  }, []);
+
+  const stopAiRun = useCallback(async () => {
+    if (aiRunIdRef.current) await window.wraith.ai.agentStop(aiRunIdRef.current);
   }, []);
 
   const setInterceptEdit = useCallback((id: string, patch: Partial<EditableHeld>) => {
@@ -320,9 +433,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendToRepeater = useCallback(
-    (req: PendingRepeaterRequest) => {
+    (req: PendingRepeaterRequest, label?: string) => {
       const tab = blankRepeaterTab(null);
-      tab.label = safeHostname(req.url);
+      tab.label = label || safeHostname(req.url);
       tab.request = { method: req.method, url: req.url, headers: req.headers, bodyText: req.body };
       setRepeaterTabs((cur) => [...cur, tab]);
       setActiveRepeaterTabId(tab.id);
@@ -330,6 +443,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [setPage]
   );
+
+  const [fuzzerSeed, setFuzzerSeed] = useState<PendingRepeaterRequest | null>(null);
+  const sendToFuzzer = useCallback(
+    (req: PendingRepeaterRequest) => {
+      setFuzzerSeed(req);
+      setPage("fuzzer");
+    },
+    [setPage]
+  );
+  const clearFuzzerSeed = useCallback(() => setFuzzerSeed(null), []);
+
+  const [raceSeed, setRaceSeed] = useState<PendingRepeaterRequest | null>(null);
+  const sendToRace = useCallback(
+    (req: PendingRepeaterRequest) => {
+      setRaceSeed(req);
+      setPage("race");
+    },
+    [setPage]
+  );
+  const clearRaceSeed = useCallback(() => setRaceSeed(null), []);
 
   const createRepeaterGroup = useCallback((name: string) => {
     const id = `grp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -370,6 +503,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         proxyStatus,
         refreshProxyStatus,
         sendToRepeater,
+        fuzzerSeed,
+        sendToFuzzer,
+        clearFuzzerSeed,
+        raceSeed,
+        sendToRace,
+        clearRaceSeed,
         toast,
         interceptQueue,
         interceptEdits,
@@ -391,6 +530,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteRepeaterGroup,
         setRepeaterTabGroup,
         sendRepeaterGroup,
+        aiItems,
+        aiRunId,
+        startAiRun,
+        stopAiRun,
+        comparerSlots,
+        sendToComparer,
       }}
     >
       {children}

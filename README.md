@@ -3,8 +3,10 @@
 Wraith is a from-scratch, dark-themed, all-in-one offensive web toolkit for
 ethical hacking — the "anti-Burp": the same core power (intercepting
 proxy, repeater, packet capture, hash cracking, cURL, crawler, encode/decode)
-without Burp Suite's cluttered, dated interface, and without the license
-prompts.
+plus things most proxy tools don't have at all (an agentic AI assistant, a
+passive vulnerability scanner, race-condition and OOB testing, an
+Intruder-style fuzzer, an attack-chain notebook with PoC export), without
+Burp Suite's cluttered, dated interface, and without the license prompts.
 
 It's an Electron + React/TypeScript desktop app. Everything it needs to run
 (besides itself) is a handful of already-installed CLI tools it shells out
@@ -27,10 +29,14 @@ Sidebar order, top to bottom:
   red flash on capture (sidebar + card) so you never miss one while
   working another tab.
 - **History** — full traffic log with **highlight rules** you control
-  (JSON, GraphQL, auth/cookies, 4xx/5xx, HTML, …), client-side search, and
-  **CSV/JSON export** of the current view.
+  (JSON, GraphQL, auth/cookies, 4xx/5xx, HTML, …), client-side search,
+  **CSV/JSON/HAR export and HAR import**, one-click send to
+  Repeater/Comparer/Fuzzer/Race, **"Replay as…"** a saved identity,
+  **"Ask Claude"** one-shot analysis, **export the request as a
+  Python/JavaScript/Go snippet**, live finding badges from the passive
+  scanner, and a compact-row toggle with a resizable detail pane.
 - **Repeater** — multi-tab, resend and tweak any request, sandboxed HTML
-  render of responses.
+  render of responses, tab groups with parallel/sequential group-send.
 - **Decoder** — Base64, URL, hex, HTML entities, unicode escapes, gzip, JWT
   decode, MD5/SHA1/SHA256 — pick an operation, hit Convert.
 - **Packet Capture ("Wireshark-lite")** — a live packet list backed by
@@ -53,11 +59,48 @@ Sidebar order, top to bottom:
   independent of the header's own `alg` for alg-confusion testing), a
   one-click alg:none stripper, verify, and a wordlist-based secret cracker
   for HS256/384/512 tokens.
+- **Comparer** — line-by-line diff between any two captured
+  requests/responses, headers and pretty-printed bodies included.
+- **Identities** — save named sets of auth headers (Authorization,
+  Cookie…) and "Replay as…" any of them from History, for fast broken
+  access control / IDOR checks.
+- **Fuzzer** — Intruder-style Sniper attack: mark payload positions with
+  `§…§` in the URL, a header or the body, run a wordlist through each,
+  sortable results grid.
+- **Race** — fires many copies of the same request essentially
+  simultaneously to catch check-then-use race conditions (a coupon or
+  balance used twice), with an automatic "this looks like a race" flag.
+- **Attack Chain** — a multi-step request sequence where a later step can
+  use a value extracted (via a JSON path or regex) from an earlier one's
+  response — e.g. log in, extract a token, use it in the next request —
+  and export the whole chain as a standalone Python PoC.
+- **OOB Interactions** — generates a unique domain (via the third-party
+  [interactsh](https://github.com/projectdiscovery/interactsh) service)
+  and polls for DNS/HTTP/SMTP hits against it, to confirm blind SSRF, XXE
+  and similar vulnerabilities that never return a visible response.
+- **AI** — an agentic assistant backed by your own Anthropic API key:
+  contextual "Ask Claude" buttons throughout the app for one-shot
+  analysis, plus a dedicated AI page where it can read History, decode
+  data, record Findings, navigate the app, and — only when it decides
+  it's useful, and always flagged in the transcript — fire one live
+  request through Repeater to test a hypothesis.
+- **Findings** — a Kanban board (To do/Testing/Confirmed/Reported) of
+  issues flagged manually, by the AI agent, or automatically by a passive
+  scanner that checks every response for missing security headers,
+  cookie flags, dangerous CORS, likely leaked secrets, and open GraphQL
+  introspection — no extra traffic, no setup.
 - **Settings** — proxy (port/host/body-capture cap/insecure-upstream),
-  general preferences (history limit, drop confirmation, intercept alert,
-  default capture interface, default wordlist, live accent-color
-  theming, devtools-on-launch), highlight rules, CA management (export,
-  regenerate), and a purge-everything danger zone.
+  **Match & Replace** (global find/replace rules on every
+  request/response, by text or regex), AI (Anthropic API key + model),
+  general preferences (history limit, drop confirmation, intercept
+  alert, default capture interface, default wordlist, live accent-color
+  theming, **dark/light theme**, devtools-on-launch), highlight rules,
+  **session export/import** (`.wraith` files bundling History, Findings,
+  Identities and proxy config), CA management (export, regenerate), and
+  a purge-everything danger zone.
+
+Press **Ctrl/Cmd+K** anywhere to open the command palette and jump to any
+page or run a quick action.
 
 Everything Wraith writes to disk — settings, traffic history, the
 generated CA — lives under one centralized per-user data folder (the OS's
@@ -187,6 +230,13 @@ touching for a content-only change.
 - The rendered-HTML preview in the cURL tool is a fully sandboxed iframe
   with no script execution, so viewing a fetched page's HTML can't run
   its JavaScript.
+- The AI features need your own Anthropic API key (a console.anthropic.com
+  developer key, not a claude.ai login) — it's stored locally and only
+  ever sent to Anthropic's API. Exporting a session (`.wraith` file) never
+  includes it.
+- The OOB Interactions tool talks to a third-party service (interactsh) —
+  the domain you generate and any interaction reported against it pass
+  through that service's public infrastructure, not just this machine.
 
 ## License
 

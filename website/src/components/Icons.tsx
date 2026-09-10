@@ -177,3 +177,77 @@ export function IconBook({ size = 22 }: IconProps) {
     </svg>
   );
 }
+
+export function IconAi({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" />
+      <rect x="7.5" y="7.5" width="9" height="9" rx="2.5" />
+    </svg>
+  );
+}
+
+export function IconFlag({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M6 3v18" />
+      <path d="M6 4h12l-3 4 3 4H6" />
+    </svg>
+  );
+}
+
+export function IconCompare({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4" />
+    </svg>
+  );
+}
+
+export function IconUsers({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <circle cx="9" cy="8" r="3" />
+      <path d="M3.5 20c0-3.3 2.5-6 5.5-6s5.5 2.7 5.5 6" />
+      <path d="M16 8.5c1.5 .3 2.5 1.6 2.5 3s-1 2.7-2.5 3M20.5 20c0-2.7-1.8-5-4-5.7" />
+    </svg>
+  );
+}
+
+export function IconZap({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" />
+    </svg>
+  );
+}
+
+export function IconLink({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M9.5 14.5l5-5" />
+      <path d="M8 16.5 5.5 19a3 3 0 0 1-4-4.5L4 12" />
+      <path d="M16 7.5 18.5 5a3 3 0 0 1 4 4.5L20 12" />
+    </svg>
+  );
+}
+
+export function IconRace({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </svg>
+  );
+}
+
+export function IconWifi({ size = 22 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+      <path d="M3 9a15 15 0 0 1 18 0" />
+      <path d="M6.5 13a10 10 0 0 1 11 0" />
+      <path d="M10 17a5 5 0 0 1 4 0" />
+      <circle cx="12" cy="20.2" r="0.8" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}

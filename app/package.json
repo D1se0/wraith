@@ -1,7 +1,7 @@
 {
   "name": "wraith",
   "productName": "Wraith",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Wraith — an intuitive, automatic, all-in-one offensive web toolkit (intercepting proxy, packet capture, hash cracking, cURL builder, crawler and more).",
   "author": "Wraith Project <noreply@wraith.local>",
   "homepage": "https://github.com/D1se0/wraith",
@@ -22,8 +22,10 @@
     "dist:all": "npm run build && electron-builder -mwl"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "axios": "^1.20.0",
     "cheerio": "^1.2.0",
+    "diff": "^9.0.0",
     "http-mitm-proxy": "^1.1.0"
   },
   "devDependencies": {
@@ -55,17 +57,34 @@
       "package.json"
     ],
     "extraResources": [
-      { "from": "resources/wordlists", "to": "wordlists" }
+      {
+        "from": "resources/wordlists",
+        "to": "wordlists"
+      }
     ],
     "icon": "build/icon.png",
     "linux": {
-      "target": [{ "target": "deb", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "category": "Network",
       "maintainer": "Wraith Project <noreply@wraith.local>",
       "synopsis": "Intuitive offensive web security toolkit"
     },
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }]
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -77,7 +96,15 @@
       "artifactName": "Wraith-Setup-${version}.${ext}"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.developer-tools"
     }
   }
